@@ -1,0 +1,2 @@
+DEBUG msg=config loaded: config.yaml format: yaml
+2025/09/18 18:11:43 Auth service starting on 0.0.0.0:8000

@@ -1,0 +1,29 @@
+server:
+  http:
+    addr: 0.0.0.0:8002
+    timeout: 1s
+  grpc:
+    addr: 0.0.0.0:9002
+    timeout: 1s
+
+data:
+  database:
+    driver: postgres
+    source: postgres://chat_user:chat_password@localhost:5432/chat_db?sslmode=disable
+  redis:
+    addr: 127.0.0.1:6379
+    read_timeout: 0.2s
+    write_timeout: 0.2s
+
+mqtt:
+  broker_url: "tcp://localhost:1883"
+  username: "presence_service"
+  password: "presence_service_password"
+  topics:
+    - "presence/+/status"
+    - "$SYS/brokers/+/clients/+/connected"
+    - "$SYS/brokers/+/clients/+/disconnected"
+
+presence:
+  heartbeat_interval: 30s
+  offline_timeout: 60s

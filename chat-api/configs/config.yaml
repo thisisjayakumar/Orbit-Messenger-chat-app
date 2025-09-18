@@ -1,0 +1,27 @@
+server:
+  http:
+    addr: 0.0.0.0:8003
+    timeout: 1s
+  grpc:
+    addr: 0.0.0.0:9003
+    timeout: 1s
+
+data:
+  database:
+    driver: postgres
+    source: postgres://chat_user:chat_password@localhost:5432/chat_db?sslmode=disable
+  redis:
+    addr: 127.0.0.1:6379
+    read_timeout: 0.2s
+    write_timeout: 0.2s
+
+services:
+  auth_service: "http://localhost:8000"
+  message_service: "http://localhost:8001"
+  presence_service: "http://localhost:8002"
+  media_service: "http://localhost:8004"
+
+mqtt:
+  broker_url: "tcp://localhost:1883"
+  username: "chat_api"
+  password: "chat_api_password"

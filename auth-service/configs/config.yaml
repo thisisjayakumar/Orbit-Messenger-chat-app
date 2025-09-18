@@ -1,0 +1,30 @@
+server:
+  http:
+    addr: 0.0.0.0:8000
+    timeout: 1s
+  grpc:
+    addr: 0.0.0.0:9000
+    timeout: 1s
+
+data:
+  database:
+    driver: postgres
+    source: postgres://chat_user:chat_password@localhost:5432/chat_db?sslmode=disable
+  redis:
+    addr: 127.0.0.1:6379
+    read_timeout: 0.2s
+    write_timeout: 0.2s
+
+auth:
+  jwt_secret: "your-super-secret-jwt-key-change-in-production"
+  token_ttl: 24h
+  keycloak:
+    url: "http://localhost:8080"
+    realm: "orbit-chat"
+    client_id: "orbit-chat-client"
+    client_secret: "your-client-secret"
+
+mqtt:
+  broker_url: "tcp://localhost:1883"
+  username: "chat_service"
+  password: "chat_service_password"

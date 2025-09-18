@@ -1,0 +1,20 @@
+2025/09/18 18:12:04 Connected to MQTT broker
+2025/09/18 18:12:04 Presence service starting on port 8002
+2025/09/18 18:12:04 Subscribed to topic: presence/+/status
+2025/09/18 18:12:04 Subscribed to topic: $SYS/brokers/+/clients/+/connected
+2025/09/18 18:12:04 Subscribed to topic: $SYS/brokers/+/clients/+/disconnected
+2025/09/18 19:15:23 Received message on topic presence/bdd5af4c-4f94-4a0b-b934-e67f3e6d201b/status: {"user_id":"bdd5af4c-4f94-4a0b-b934-e67f3e6d201b","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:15:23.90099+05:30"}
+2025/09/18 19:15:55 Received message on topic presence/0e20c898-825a-4f90-973a-419a3383d9f1/status: {"user_id":"0e20c898-825a-4f90-973a-419a3383d9f1","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:15:55.266827+05:30"}
+2025/09/18 19:16:45 Received message on topic presence/86cc1653-d65f-4820-8854-d50e0bc6e70f/status: {"user_id":"86cc1653-d65f-4820-8854-d50e0bc6e70f","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:16:45.716722+05:30"}
+2025/09/18 19:17:45 Received message on topic presence/eac0f436-ac0c-4fc5-84b2-a6f3b7763911/status: {"user_id":"eac0f436-ac0c-4fc5-84b2-a6f3b7763911","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:17:45.46685+05:30"}
+2025/09/18 19:18:02 Received message on topic presence/10cdb247-e95d-474b-b288-22cb7d33e282/status: {"user_id":"10cdb247-e95d-474b-b288-22cb7d33e282","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:18:02.687813+05:30"}
+2025/09/18 19:18:42 Received message on topic presence/8450d8a5-0582-4041-b2bc-44eaec7744b9/status: {"user_id":"8450d8a5-0582-4041-b2bc-44eaec7744b9","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:18:42.225793+05:30"}
+2025/09/18 19:21:03 Received message on topic presence/d8f6b0f1-2bfa-4ebf-b366-a7f9f927f24d/status: {"user_id":"d8f6b0f1-2bfa-4ebf-b366-a7f9f927f24d","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:21:03.022669+05:30"}
+2025/09/18 19:21:55 Received message on topic presence/20fc9669-39dd-4756-941c-c99e587e4a0f/status: {"user_id":"20fc9669-39dd-4756-941c-c99e587e4a0f","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:21:55.869995+05:30"}
+2025/09/18 19:22:15 Received message on topic presence/5519c17b-6aea-4456-b695-4d4d053ec706/status: {"user_id":"5519c17b-6aea-4456-b695-4d4d053ec706","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:22:15.222536+05:30"}
+2025/09/18 19:22:49 Received message on topic presence/9d33ca5f-b788-427d-8cab-613fdb6c5da2/status: {"user_id":"9d33ca5f-b788-427d-8cab-613fdb6c5da2","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:22:49.579757+05:30"}
+2025/09/18 19:23:00 Received message on topic presence/dc985323-e1c4-4142-bfa9-d725ea97f3db/status: {"user_id":"dc985323-e1c4-4142-bfa9-d725ea97f3db","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:23:00.457278+05:30"}
+2025/09/18 19:23:29 Received message on topic presence/cb5fe8ec-65d7-4a39-a2a4-79465d71f5bb/status: {"user_id":"cb5fe8ec-65d7-4a39-a2a4-79465d71f5bb","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:23:29.365062+05:30"}
+2025/09/18 19:26:54 Received message on topic presence/9a28359a-2784-43f6-adc1-265a8f98bdf3/status: {"user_id":"9a28359a-2784-43f6-adc1-265a8f98bdf3","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:26:54.803989+05:30"}
+2025/09/18 19:27:10 Received message on topic presence/ea63d0a6-c833-40c0-9b9e-f9ac853b5123/status: {"user_id":"ea63d0a6-c833-40c0-9b9e-f9ac853b5123","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:27:10.340724+05:30"}
+2025/09/18 19:27:31 Received message on topic presence/a225c9b4-e417-44da-ace3-a91dda25e5af/status: {"user_id":"a225c9b4-e417-44da-ace3-a91dda25e5af","status":"online","custom_status":"Testing the system","timestamp":"2025-09-18T19:27:31.666558+05:30"}

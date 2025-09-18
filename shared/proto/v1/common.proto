@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "github.com/thisisjayakumar/hybrid-chat-system/shared/proto/common/v1;commonv1";
+
+import "google/protobuf/timestamp.proto";
+
+message Organization {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message User {
+  string id = 1;
+  string organization_id = 2;
+  string email = 3;
+  string display_name = 4;
+  string avatar_url = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_seen_at = 7;
+}
+
+message Message {
+  string id = 1;
+  string conversation_id = 2;
+  string sender_id = 3;
+  string content_type = 4;
+  string content = 5;
+  string dedupe_key = 6;
+  google.protobuf.Timestamp sent_at = 7;
+  google.protobuf.Timestamp edited_at = 8;
+  bool deleted = 9;
+}
