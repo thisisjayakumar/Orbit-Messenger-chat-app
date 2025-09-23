@@ -75,31 +75,31 @@ docker-compose -f docker-compose.dev.yml logs keycloak
 
 **Terminal 1 - Auth Service (Port 8000):**
 ```bash
-cd /Users/jayakumarn/Documents/personal/Orbit-Messenger-chat-app
+cd /Users/jayakumarn/Documents/personal/orbit-internal-communication/Orbit-Messenger-chat-app
 ./bin/auth-service -conf auth-service/configs/config.yaml
 ```
 
 **Terminal 2 - Message Service (Port 8001):**
 ```bash
-cd /Users/jayakumarn/Documents/personal/Orbit-Messenger-chat-app
+cd /Users/jayakumarn/Documents/personal/orbit-internal-communication/Orbit-Messenger-chat-app
 ./bin/message-service -conf message-service/configs/config.yaml
 ```
 
 **Terminal 3 - Chat API (Port 8003):**
 ```bash
-cd /Users/jayakumarn/Documents/personal/Orbit-Messenger-chat-app
+cd /Users/jayakumarn/Documents/personal/orbit-internal-communication/Orbit-Messenger-chat-app
 ./bin/chat-api -conf chat-api/configs/config.yaml
 ```
 
 **Terminal 4 - Presence Service (Port 8002):**
 ```bash
-cd /Users/jayakumarn/Documents/personal/Orbit-Messenger-chat-app
+cd /Users/jayakumarn/Documents/personal/orbit-internal-communication/Orbit-Messenger-chat-app
 ./bin/presence-service -conf presence-service/configs/config.yaml
 ```
 
 **Terminal 5 - Media Service (Port 8004):**
 ```bash
-cd /Users/jayakumarn/Documents/personal/Orbit-Messenger-chat-app
+cd /Users/jayakumarn/Documents/personal/orbit-internal-communication/Orbit-Messenger-chat-app
 ./bin/media-service -conf media-service/configs/config.yaml
 ```
 

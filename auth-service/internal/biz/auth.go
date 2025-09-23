@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/Nerzal/gocloak/v13"
@@ -77,6 +78,7 @@ type KeycloakConfig struct {
 type AuthRepo interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUserByEmail(ctx context.Context, email string, orgID uuid.UUID) (*User, error)
+	GetUserByEmailAnyOrg(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*User, error)
 	GetUserByKeycloakID(ctx context.Context, keycloakID string) (*User, error)
 	UpdateLastSeen(ctx context.Context, userID uuid.UUID) error
@@ -97,10 +99,13 @@ type AuthUsecase struct {
 func NewAuthUsecase(repo AuthRepo, jwtSecret string, tokenTTL time.Duration, keycloakConfig KeycloakConfig) (*AuthUsecase, error) {
 	keycloakClient := gocloak.NewClient(keycloakConfig.URL)
 	
-	// Initialize OIDC provider
+	// Try to initialize OIDC provider, but don't fail if Keycloak is not available
+	var oidcProvider *oidc.Provider
 	oidcProvider, err := oidc.NewProvider(context.Background(), keycloakConfig.URL+"/realms/"+keycloakConfig.Realm)
 	if err != nil {
-		return nil, err
+		// Log warning but continue without Keycloak support
+		log.Printf("Warning: Failed to initialize Keycloak OIDC provider: %v. Direct auth will still work.", err)
+		oidcProvider = nil
 	}
 
 	return &AuthUsecase{
@@ -171,7 +176,16 @@ func (uc *AuthUsecase) Register(ctx context.Context, req *RegisterRequest) (*Use
 
 func (uc *AuthUsecase) Login(ctx context.Context, req *LoginRequest, orgID uuid.UUID) (*User, string, error) {
 	// Get user by email
-	user, err := uc.repo.GetUserByEmail(ctx, req.Email, orgID)
+	var user *User
+	var err error
+	
+	// If no organization ID provided, find user in any organization
+	if orgID == uuid.Nil {
+		user, err = uc.repo.GetUserByEmailAnyOrg(ctx, req.Email)
+	} else {
+		user, err = uc.repo.GetUserByEmail(ctx, req.Email, orgID)
+	}
+	
 	if err != nil {
 		return nil, "", ErrUserNotFound
 	}
@@ -221,6 +235,10 @@ func (uc *AuthUsecase) GetUser(ctx context.Context, userID uuid.UUID) (*User, er
 
 // OIDCLogin handles Keycloak OIDC authentication
 func (uc *AuthUsecase) OIDCLogin(ctx context.Context, req *OIDCLoginRequest, orgID uuid.UUID) (*User, string, error) {
+	if uc.oidcProvider == nil {
+		return nil, "", errors.New("Keycloak OIDC provider not available")
+	}
+	
 	// Exchange authorization code for token
 	token, err := uc.keycloakClient.GetToken(ctx, uc.keycloakConfig.Realm, gocloak.TokenOptions{
 		ClientID:     &uc.keycloakConfig.ClientID,

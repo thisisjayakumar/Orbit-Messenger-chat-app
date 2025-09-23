@@ -1,9 +1,10 @@
-FROM golang:1.19 AS builder
+FROM golang:1.23 AS builder
 
 COPY . /src
 WORKDIR /src
 
-RUN GOPROXY=https://goproxy.cn make build
+# Build the specific service
+RUN GOPROXY=https://goproxy.cn go build -ldflags "-X main.Version=docker" -o ./bin/auth-service ./auth-service/cmd/auth-service
 
 FROM debian:stable-slim
 
@@ -21,4 +22,4 @@ EXPOSE 8000
 EXPOSE 9000
 VOLUME /data/conf
 
-CMD ["./server", "-conf", "/data/conf"]
+CMD ["./auth-service", "-conf", "/data/conf"]

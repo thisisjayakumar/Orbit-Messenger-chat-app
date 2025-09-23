@@ -22,12 +22,15 @@ type Message struct {
 }
 
 type IncomingMessage struct {
+	ID             uuid.UUID              `json:"id"`
 	ConversationID uuid.UUID              `json:"conversation_id"`
 	SenderID       uuid.UUID              `json:"sender_id"`
 	ContentType    string                 `json:"content_type"`
 	Content        string                 `json:"content"`
 	Meta           map[string]interface{} `json:"meta,omitempty"`
 	DedupeKey      string                 `json:"dedupe_key,omitempty"`
+	SentAt         time.Time              `json:"sent_at"`
+	Deleted        bool                   `json:"deleted"`
 }
 
 type Receipt struct {
@@ -67,10 +70,10 @@ type MessageRepo interface {
 	GetMessagesByConversation(ctx context.Context, conversationID uuid.UUID, limit int, offset int) ([]*Message, error)
 	UpdateMessage(ctx context.Context, message *Message) error
 	DeleteMessage(ctx context.Context, id uuid.UUID) error
-	
+
 	CreateReceipt(ctx context.Context, receipt *Receipt) error
 	GetReceiptsByMessage(ctx context.Context, messageID uuid.UUID) ([]*Receipt, error)
-	
+
 	CreateAttachment(ctx context.Context, attachment *Attachment) error
 	GetAttachmentsByMessage(ctx context.Context, messageID uuid.UUID) ([]*Attachment, error)
 }
@@ -91,17 +94,17 @@ func (uc *MessageUsecase) ProcessIncomingMessage(ctx context.Context, payload []
 		return err
 	}
 
-	// Create message with idempotency check
+	// Create message with original ID to maintain consistency
 	message := &Message{
-		ID:             uuid.New(),
+		ID:             incoming.ID,
 		ConversationID: incoming.ConversationID,
 		SenderID:       incoming.SenderID,
 		ContentType:    incoming.ContentType,
 		Content:        incoming.Content,
 		Meta:           incoming.Meta,
 		DedupeKey:      incoming.DedupeKey,
-		SentAt:         time.Now(),
-		Deleted:        false,
+		SentAt:         incoming.SentAt,
+		Deleted:        incoming.Deleted,
 	}
 
 	return uc.repo.CreateMessage(ctx, message)

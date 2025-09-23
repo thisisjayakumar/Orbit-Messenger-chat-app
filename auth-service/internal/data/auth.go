@@ -62,6 +62,29 @@ func (r *authRepo) GetUserByEmail(ctx context.Context, email string, orgID uuid.
 	return user, nil
 }
 
+func (r *authRepo) GetUserByEmailAnyOrg(ctx context.Context, email string) (*biz.User, error) {
+	user := &biz.User{}
+	var profileJSON []byte
+
+	query := `
+		SELECT id, organization_id, email, display_name, avatar_url, profile, created_at, last_seen_at, password_hash, keycloak_id
+		FROM users WHERE email = $1 ORDER BY created_at DESC LIMIT 1`
+
+	err := r.db.QueryRowContext(ctx, query, email).Scan(
+		&user.ID, &user.OrganizationID, &user.Email, &user.DisplayName,
+		&user.AvatarURL, &profileJSON, &user.CreatedAt, &user.LastSeenAt, &user.PasswordHash, &user.KeycloakID)
+
+	if err == sql.ErrNoRows {
+		return nil, biz.ErrUserNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	json.Unmarshal(profileJSON, &user.Profile)
+	return user, nil
+}
+
 func (r *authRepo) GetUserByID(ctx context.Context, id uuid.UUID) (*biz.User, error) {
 	user := &biz.User{}
 	var profileJSON []byte

@@ -48,6 +48,7 @@ func main() {
             dbSource = "postgres://chat_user:chat_password@localhost:5432/chat_db?sslmode=disable"
         }
     }
+    log.Printf("Using database source: %s", dbSource)
     db, err := sql.Open("postgres", dbSource)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)

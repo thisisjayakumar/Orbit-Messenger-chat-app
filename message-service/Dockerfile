@@ -1,9 +1,10 @@
-FROM golang:1.19 AS builder
+FROM golang:1.23 AS builder
 
 COPY . /src
 WORKDIR /src
 
-RUN GOPROXY=https://goproxy.cn make build
+# Build the specific service
+RUN GOPROXY=https://goproxy.cn go build -ldflags "-X main.Version=docker" -o ./bin/message-service ./message-service/cmd/message-service
 
 FROM debian:stable-slim
 
@@ -17,8 +18,7 @@ COPY --from=builder /src/bin /app
 
 WORKDIR /app
 
-EXPOSE 8000
-EXPOSE 9000
+EXPOSE 8083
 VOLUME /data/conf
 
-CMD ["./server", "-conf", "/data/conf"]
+CMD ["./message-service", "-conf", "/data/conf"]

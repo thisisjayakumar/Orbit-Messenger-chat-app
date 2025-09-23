@@ -117,10 +117,12 @@ func (r *chatRepo) RemoveParticipant(ctx context.Context, conversationID, userID
 
 func (r *chatRepo) GetConversationParticipants(ctx context.Context, conversationID uuid.UUID) ([]*biz.Participant, error) {
 	query := `
-		SELECT id, conversation_id, user_id, role, joined_at, last_read_at
-		FROM conversation_participants 
-		WHERE conversation_id = $1
-		ORDER BY joined_at ASC`
+		SELECT cp.id, cp.conversation_id, cp.user_id, cp.role, cp.joined_at, cp.last_read_at,
+		       u.display_name, u.email
+		FROM conversation_participants cp
+		INNER JOIN users u ON cp.user_id = u.id
+		WHERE cp.conversation_id = $1
+		ORDER BY cp.joined_at ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, conversationID)
 	if err != nil {
@@ -133,7 +135,8 @@ func (r *chatRepo) GetConversationParticipants(ctx context.Context, conversation
 		participant := &biz.Participant{}
 		err := rows.Scan(
 			&participant.ID, &participant.ConversationID, &participant.UserID,
-			&participant.Role, &participant.JoinedAt, &participant.LastReadAt)
+			&participant.Role, &participant.JoinedAt, &participant.LastReadAt,
+			&participant.DisplayName, &participant.Email)
 		if err != nil {
 			return nil, err
 		}
@@ -179,10 +182,20 @@ func (r *chatRepo) UpdateLastReadAt(ctx context.Context, conversationID, userID 
 
 func (r *chatRepo) GetConversationMessages(ctx context.Context, conversationID uuid.UUID, limit, offset int) ([]*biz.Message, error) {
 	query := `
-		SELECT id, conversation_id, sender_id, content_type, content, meta, dedupe_key, sent_at, edited_at, deleted
-		FROM messages 
-		WHERE conversation_id = $1 AND deleted = false
-		ORDER BY sent_at DESC
+		SELECT m.id, m.conversation_id, m.sender_id, m.content_type, m.content, m.meta, m.dedupe_key, 
+		       m.sent_at, m.edited_at, m.deleted,
+		       CASE 
+		           WHEN EXISTS (
+		               SELECT 1 FROM conversation_participants cp 
+		               WHERE cp.conversation_id = m.conversation_id 
+		               AND cp.user_id != m.sender_id 
+		               AND cp.last_read_at >= m.sent_at
+		           ) THEN true 
+		           ELSE false 
+		       END as is_read
+		FROM messages m
+		WHERE m.conversation_id = $1 AND m.deleted = false
+		ORDER BY m.sent_at DESC
 		LIMIT $2 OFFSET $3`
 
 	rows, err := r.db.QueryContext(ctx, query, conversationID, limit, offset)
@@ -198,7 +211,7 @@ func (r *chatRepo) GetConversationMessages(ctx context.Context, conversationID u
 
 		err := rows.Scan(
 			&message.ID, &message.ConversationID, &message.SenderID, &message.ContentType,
-			&message.Content, &metaJSON, &message.DedupeKey, &message.SentAt, &message.EditedAt, &message.Deleted)
+			&message.Content, &metaJSON, &message.DedupeKey, &message.SentAt, &message.EditedAt, &message.Deleted, &message.IsRead)
 		if err != nil {
 			return nil, err
 		}

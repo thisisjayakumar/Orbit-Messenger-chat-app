@@ -38,6 +38,8 @@ type Participant struct {
 	Role           ParticipantRole `json:"role"`
 	JoinedAt       time.Time       `json:"joined_at"`
 	LastReadAt     *time.Time      `json:"last_read_at,omitempty"`
+	DisplayName    string          `json:"display_name,omitempty"`
+	Email          string          `json:"email,omitempty"`
 }
 
 type Message struct {
@@ -51,6 +53,7 @@ type Message struct {
 	SentAt         time.Time              `json:"sent_at"`
 	EditedAt       *time.Time             `json:"edited_at,omitempty"`
 	Deleted        bool                   `json:"deleted"`
+	IsRead         bool                   `json:"is_read"`
 }
 
 type CreateConversationRequest struct {

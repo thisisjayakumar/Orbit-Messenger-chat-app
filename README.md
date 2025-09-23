@@ -8,7 +8,7 @@ Orbit Messenger follows a distributed microservices architecture with the follow
 
 ### Backend Services
 
-1. **Auth Service** (Port 8000)
+1. **Auth Service** (Port 8080)
    - User authentication and authorization
    - Keycloak OIDC integration
    - JWT token management
@@ -51,7 +51,7 @@ Orbit Messenger follows a distributed microservices architecture with the follow
 ### Prerequisites
 
 - Docker and Docker Compose
-- Go 1.21+
+- Go 1.21+ (optional, for development)
 - jq (for testing scripts)
 
 ### 1. Clone and Setup
@@ -61,36 +61,72 @@ git clone <repository-url>
 cd Orbit-Messenger-chat-app
 ```
 
-### 2. Start Infrastructure Services
+### 2. Start All Services (One Command!)
 
 ```bash
-# Start all infrastructure services
-docker-compose -f docker-compose.dev.yml up -d
-
-# Wait for services to be ready (check logs)
-docker-compose -f docker-compose.dev.yml logs -f
+# Start everything with one command
+./scripts/start-all-services.sh
 ```
 
-### 3. Build and Start Application Services
+This will:
+- Build and start all Go microservices
+- Start all infrastructure services (PostgreSQL, Redis, EMQX, MinIO, Keycloak, OpenSearch)
+- Configure proper service dependencies
+- Display all service URLs and credentials
+
+### 3. Frontend Environment Configuration
+
+Copy the following to your frontend `.env.local` file:
 
 ```bash
-# Use the provided startup script
-./scripts/start-services.sh
+# API Service URLs
+NEXT_PUBLIC_AUTH_SERVICE_URL=http://localhost:8080
+NEXT_PUBLIC_CHAT_SERVICE_URL=http://localhost:8003
+NEXT_PUBLIC_PRESENCE_SERVICE_URL=http://localhost:8002
+NEXT_PUBLIC_MEDIA_SERVICE_URL=http://localhost:8004
+
+# MQTT Configuration
+NEXT_PUBLIC_MQTT_BROKER_URL=ws://localhost:8083/mqtt
+
+# Keycloak Configuration
+NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8090
+NEXT_PUBLIC_KEYCLOAK_REALM=master
+NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=orbit-messenger
+
+# App Configuration
+NEXT_PUBLIC_APP_NAME=Orbit Messenger
+NEXT_PUBLIC_APP_VERSION=1.0.0
 ```
 
-### 4. Run Tests
+### 4. Verify Services
 
 ```bash
+# Check all services are running
+docker-compose -f docker-compose.dev.yml ps
+
 # Test all services
-./scripts/test-all-services.sh
+./scripts/test-services.sh
 ```
 
 ### 5. Stop All Services
 
 ```bash
 # Stop everything
-./scripts/stop-services.sh
+./scripts/stop-all-services.sh
 ```
+
+### Service URLs
+
+Once started, your services will be available at:
+
+- **Auth Service**: http://localhost:8080
+- **Chat API**: http://localhost:8003  
+- **Presence Service**: http://localhost:8002
+- **Media Service**: http://localhost:8004
+- **Message Service**: http://localhost:8001
+- **Keycloak Admin**: http://localhost:8090 (admin/admin123)
+- **EMQX Dashboard**: http://localhost:18083 (admin/public)
+- **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin123)
 
 ## 📊 Database Schema
 
@@ -117,7 +153,7 @@ The application uses PostgreSQL with the following main entities:
 
 ## 🌐 API Endpoints
 
-### Auth Service (Port 8000)
+### Auth Service (Port 8080)
 
 ```
 POST /api/v1/auth/register       - User registration
@@ -227,7 +263,7 @@ All services use structured logging with configurable levels.
 
 - **EMQX Dashboard**: http://localhost:18083 (admin/public)
 - **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin123)
-- **Keycloak Admin**: http://localhost:8080 (admin/admin123)
+- **Keycloak Admin**: http://localhost:8090 (admin/admin123)
 
 ## 🚢 Deployment
 

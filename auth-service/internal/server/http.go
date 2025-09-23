@@ -47,7 +47,7 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-Organization-ID")
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
@@ -88,20 +88,20 @@ func (s *HTTPServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get organization ID from header or query param
+	// Get organization ID from header or query param (optional)
 	orgIDStr := r.Header.Get("X-Organization-ID")
 	if orgIDStr == "" {
 		orgIDStr = r.URL.Query().Get("org_id")
 	}
-	if orgIDStr == "" {
-		s.writeError(w, http.StatusBadRequest, "Organization ID is required")
-		return
-	}
 
-	orgID, err := uuid.Parse(orgIDStr)
-	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid organization ID")
-		return
+	var orgID uuid.UUID
+	if orgIDStr != "" && orgIDStr != "00000000-0000-0000-0000-000000000000" {
+		var err error
+		orgID, err = uuid.Parse(orgIDStr)
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, "Invalid organization ID")
+			return
+		}
 	}
 
 	user, token, err := s.authUc.Login(r.Context(), &req, orgID)

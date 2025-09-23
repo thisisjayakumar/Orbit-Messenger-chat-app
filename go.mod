@@ -1,6 +1,6 @@
 module github.com/thisisjayakumar/Orbit-Messenger-chat-app
 
-go 1.23.11
+go 1.23
 
 require (
 	github.com/Nerzal/gocloak/v13 v13.8.0

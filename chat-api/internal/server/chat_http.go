@@ -35,12 +35,12 @@ func (s *ChatHTTPServer) setupRoutes() {
 	api.HandleFunc("/conversations", s.authMiddleware(s.handleGetUserConversations)).Methods("GET")
 	api.HandleFunc("/conversations/{conversationID}", s.authMiddleware(s.handleGetConversation)).Methods("GET")
 	api.HandleFunc("/conversations/{conversationID}", s.authMiddleware(s.handleUpdateConversation)).Methods("PUT")
-	
+
 	// Participants
 	api.HandleFunc("/conversations/{conversationID}/participants", s.authMiddleware(s.handleGetParticipants)).Methods("GET")
 	api.HandleFunc("/conversations/{conversationID}/participants", s.authMiddleware(s.handleAddParticipant)).Methods("POST")
 	api.HandleFunc("/conversations/{conversationID}/participants/{userID}", s.authMiddleware(s.handleRemoveParticipant)).Methods("DELETE")
-	
+
 	// Messages
 	api.HandleFunc("/conversations/{conversationID}/messages", s.authMiddleware(s.handleGetMessages)).Methods("GET")
 	api.HandleFunc("/conversations/{conversationID}/messages", s.authMiddleware(s.handleSendMessage)).Methods("POST")
@@ -52,7 +52,7 @@ func (s *ChatHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-Organization-ID")
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
@@ -159,7 +159,7 @@ func (s *ChatHTTPServer) handleAddParticipant(w http.ResponseWriter, r *http.Req
 func (s *ChatHTTPServer) handleRemoveParticipant(w http.ResponseWriter, r *http.Request) {
 	userID := s.getUserIDFromContext(r.Context())
 	conversationID := s.getConversationIDFromPath(r)
-	
+
 	vars := mux.Vars(r)
 	targetUserIDStr := vars["userID"]
 	targetUserID, err := uuid.Parse(targetUserIDStr)

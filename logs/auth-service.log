@@ -1,0 +1,5 @@
+DEBUG msg=config loaded: config.yaml format: yaml
+2025/09/21 12:39:10 Auth service starting on 0.0.0.0:8000
+2025/09/22 11:28:55 Shutting down server...
+2025/09/22 11:28:55 Server exited
+INFO msg=watcher's ctx cancel : context canceled

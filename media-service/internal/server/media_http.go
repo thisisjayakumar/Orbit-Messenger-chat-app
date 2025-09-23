@@ -1,15 +1,15 @@
 package server
 
 import (
-    "context"
-    "encoding/json"
-    "net/http"
-    "strings"
+	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
 
-    "github.com/google/uuid"
-    "github.com/gorilla/mux"
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 
-    "github.com/thisisjayakumar/Orbit-Messenger-chat-app/media-service/internal/biz"
+	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/media-service/internal/biz"
 )
 
 type MediaHTTPServer struct {
@@ -50,7 +50,7 @@ func (s *MediaHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-Organization-ID")
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)

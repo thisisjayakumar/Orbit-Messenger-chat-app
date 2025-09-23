@@ -1,13 +1,13 @@
 package server
 
 import (
-    "encoding/json"
-    "net/http"
+	"encoding/json"
+	"net/http"
 
-    "github.com/google/uuid"
-    "github.com/gorilla/mux"
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 
-    "github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/biz"
+	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/biz"
 )
 
 type PresenceHTTPServer struct {
@@ -39,7 +39,7 @@ func (s *PresenceHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-Organization-ID")
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
@@ -95,7 +95,7 @@ func (s *PresenceHTTPServer) handleSetUserStatus(w http.ResponseWriter, r *http.
 		biz.StatusOffline,
 		biz.StatusDoNotDisturb,
 	}
-	
+
 	isValid := false
 	for _, validStatus := range validStatuses {
 		if req.Status == validStatus {
@@ -103,7 +103,7 @@ func (s *PresenceHTTPServer) handleSetUserStatus(w http.ResponseWriter, r *http.
 			break
 		}
 	}
-	
+
 	if !isValid {
 		s.writeError(w, http.StatusBadRequest, "Invalid status")
 		return
