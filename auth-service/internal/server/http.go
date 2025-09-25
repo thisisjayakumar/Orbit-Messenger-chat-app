@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -35,6 +36,12 @@ func (s *HTTPServer) setupRoutes() {
 	api.HandleFunc("/auth/validate", s.handleValidateToken).Methods("POST")
 	api.HandleFunc("/auth/me", s.authMiddleware(s.handleGetMe)).Methods("GET")
 	api.HandleFunc("/auth/mqtt-credentials", s.authMiddleware(s.handleMQTTCredentials)).Methods("GET")
+
+	// User management endpoints
+	api.HandleFunc("/auth/users", s.authMiddleware(s.handleGetOrganizationUsers)).Methods("GET")
+	api.HandleFunc("/auth/users/{id}", s.authMiddleware(s.handleGetUser)).Methods("GET")
+	api.HandleFunc("/auth/users/{id}", s.authMiddleware(s.handleUpdateUser)).Methods("PUT")
+	api.HandleFunc("/auth/users/{id}", s.authMiddleware(s.handleDeleteUser)).Methods("DELETE")
 
 	// Health check
 	s.router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +148,7 @@ func (s *HTTPServer) handleValidateToken(w http.ResponseWriter, r *http.Request)
 
 func (s *HTTPServer) handleGetMe(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	userID, _ := uuid.Parse(claims.UserID)
+	userID := claims.UserID
 
 	user, err := s.authUc.GetUser(r.Context(), userID)
 	if err != nil {
@@ -190,7 +197,7 @@ func (s *HTTPServer) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *HTTPServer) handleMQTTCredentials(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	userID, _ := uuid.Parse(claims.UserID)
+	userID := claims.UserID
 
 	username, password, err := s.authUc.GenerateMQTTCredentials(r.Context(), userID)
 	if err != nil {
@@ -203,6 +210,19 @@ func (s *HTTPServer) handleMQTTCredentials(w http.ResponseWriter, r *http.Reques
 		"password": password,
 	}
 	s.writeJSON(w, http.StatusOK, response)
+}
+
+func (s *HTTPServer) handleGetOrganizationUsers(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value("claims").(*biz.JWTClaims)
+	orgID, _ := uuid.Parse(claims.OrganizationID)
+
+	users, err := s.authUc.GetOrganizationUsers(r.Context(), orgID)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, users)
 }
 
 func (s *HTTPServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -240,4 +260,102 @@ func (s *HTTPServer) writeError(w http.ResponseWriter, status int, message strin
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+// handleGetUser gets a specific user by ID
+func (s *HTTPServer) handleGetUser(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value("claims").(*biz.JWTClaims)
+	requesterID := claims.UserID
+
+	vars := mux.Vars(r)
+	userID, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	user, err := s.authUc.GetUser(r.Context(), userID)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "User not found")
+		return
+	}
+
+	// Check if requester can view this user (same organization)
+	requester, err := s.authUc.GetUser(r.Context(), requesterID)
+	if err != nil {
+		s.writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	if user.OrganizationID != requester.OrganizationID {
+		s.writeError(w, http.StatusForbidden, "Cannot view users from other organizations")
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, user)
+}
+
+// handleUpdateUser updates a user
+func (s *HTTPServer) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value("claims").(*biz.JWTClaims)
+	requesterID := claims.UserID
+
+	vars := mux.Vars(r)
+	targetUserID, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	var req biz.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	if err := s.authUc.UpdateUser(r.Context(), requesterID, targetUserID, &req); err != nil {
+		if err.Error() == "insufficient permissions" {
+			s.writeError(w, http.StatusForbidden, "Insufficient permissions")
+			return
+		}
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Return updated user
+	user, err := s.authUc.GetUser(r.Context(), targetUserID)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "Failed to get updated user")
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, user)
+}
+
+// handleDeleteUser deletes a user (admin only)
+func (s *HTTPServer) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value("claims").(*biz.JWTClaims)
+	requesterID := claims.UserID
+
+	vars := mux.Vars(r)
+	targetUserID, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	if err := s.authUc.DeleteUser(r.Context(), requesterID, targetUserID); err != nil {
+		if err.Error() == "insufficient permissions" {
+			s.writeError(w, http.StatusForbidden, "Insufficient permissions")
+			return
+		}
+		if err.Error() == "cannot delete yourself" {
+			s.writeError(w, http.StatusBadRequest, "Cannot delete yourself")
+			return
+		}
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]string{"message": "User deleted successfully"})
 }

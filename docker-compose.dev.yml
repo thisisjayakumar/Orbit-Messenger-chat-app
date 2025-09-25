@@ -94,7 +94,7 @@ services:
       dockerfile: auth-service/Dockerfile
     container_name: orbit-auth-service
     ports:
-      - "8080:8000"
+      - "8080:8080"
       - "9090:9090"
     volumes:
       - ./auth-service/configs:/app/configs
@@ -107,6 +107,7 @@ services:
       - CONFIG_PATH=/app/configs/config.yaml
       - KEYCLOAK_URL=http://keycloak:8080
       - DATABASE_URL=postgres://chat_user:chat_password@postgres:5432/chat_db?sslmode=disable
+      - PORT=8080
     restart: unless-stopped
 
   message-service:

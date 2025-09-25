@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -20,12 +21,20 @@ var (
 	ErrInvalidToken    = errors.New("invalid token")
 )
 
+type UserRole string
+
+const (
+	UserRoleAdmin  UserRole = "admin"
+	UserRoleMember UserRole = "member"
+)
+
 type User struct {
-	ID             uuid.UUID              `json:"id"`
+	ID             int                    `json:"id"`
 	OrganizationID uuid.UUID              `json:"organization_id"`
 	Email          string                 `json:"email"`
 	DisplayName    string                 `json:"display_name"`
 	AvatarURL      string                 `json:"avatar_url,omitempty"`
+	Role           UserRole               `json:"role"`
 	Profile        map[string]interface{} `json:"profile,omitempty"`
 	CreatedAt      time.Time              `json:"created_at"`
 	LastSeenAt     *time.Time             `json:"last_seen_at,omitempty"`
@@ -54,7 +63,7 @@ type RegisterRequest struct {
 }
 
 type JWTClaims struct {
-	UserID         string `json:"user_id"`
+	UserID         int    `json:"user_id"`
 	OrganizationID string `json:"organization_id"`
 	Email          string `json:"email"`
 	Role           string `json:"role"`
@@ -63,9 +72,9 @@ type JWTClaims struct {
 }
 
 type OIDCLoginRequest struct {
-	Code         string `json:"code" validate:"required"`
-	RedirectURI  string `json:"redirect_uri" validate:"required"`
-	ClientID     string `json:"client_id" validate:"required"`
+	Code        string `json:"code" validate:"required"`
+	RedirectURI string `json:"redirect_uri" validate:"required"`
+	ClientID    string `json:"client_id" validate:"required"`
 }
 
 type KeycloakConfig struct {
@@ -75,13 +84,23 @@ type KeycloakConfig struct {
 	ClientSecret string `yaml:"client_secret"`
 }
 
+type UpdateUserRequest struct {
+	DisplayName *string                 `json:"display_name,omitempty"`
+	AvatarURL   *string                 `json:"avatar_url,omitempty"`
+	Role        *UserRole               `json:"role,omitempty"`
+	Profile     *map[string]interface{} `json:"profile,omitempty"`
+}
+
 type AuthRepo interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUserByEmail(ctx context.Context, email string, orgID uuid.UUID) (*User, error)
 	GetUserByEmailAnyOrg(ctx context.Context, email string) (*User, error)
-	GetUserByID(ctx context.Context, id uuid.UUID) (*User, error)
+	GetUserByID(ctx context.Context, id int) (*User, error)
 	GetUserByKeycloakID(ctx context.Context, keycloakID string) (*User, error)
-	UpdateLastSeen(ctx context.Context, userID uuid.UUID) error
+	GetOrganizationUsers(ctx context.Context, orgID uuid.UUID) ([]*User, error)
+	UpdateUser(ctx context.Context, userID int, req *UpdateUserRequest) error
+	DeleteUser(ctx context.Context, userID int) error
+	UpdateLastSeen(ctx context.Context, userID int) error
 
 	CreateOrganization(ctx context.Context, org *Organization) error
 	GetOrganization(ctx context.Context, id uuid.UUID) (*Organization, error)
@@ -98,7 +117,7 @@ type AuthUsecase struct {
 
 func NewAuthUsecase(repo AuthRepo, jwtSecret string, tokenTTL time.Duration, keycloakConfig KeycloakConfig) (*AuthUsecase, error) {
 	keycloakClient := gocloak.NewClient(keycloakConfig.URL)
-	
+
 	// Try to initialize OIDC provider, but don't fail if Keycloak is not available
 	var oidcProvider *oidc.Provider
 	oidcProvider, err := oidc.NewProvider(context.Background(), keycloakConfig.URL+"/realms/"+keycloakConfig.Realm)
@@ -151,10 +170,10 @@ func (uc *AuthUsecase) Register(ctx context.Context, req *RegisterRequest) (*Use
 
 	// Create user
 	user := &User{
-		ID:             uuid.New(),
 		OrganizationID: orgID,
 		Email:          req.Email,
 		DisplayName:    req.DisplayName,
+		Role:           UserRoleMember, // Default role
 		Profile:        make(map[string]interface{}),
 		CreatedAt:      time.Now(),
 		PasswordHash:   string(hashedPassword),
@@ -178,14 +197,14 @@ func (uc *AuthUsecase) Login(ctx context.Context, req *LoginRequest, orgID uuid.
 	// Get user by email
 	var user *User
 	var err error
-	
+
 	// If no organization ID provided, find user in any organization
 	if orgID == uuid.Nil {
 		user, err = uc.repo.GetUserByEmailAnyOrg(ctx, req.Email)
 	} else {
 		user, err = uc.repo.GetUserByEmail(ctx, req.Email, orgID)
 	}
-	
+
 	if err != nil {
 		return nil, "", ErrUserNotFound
 	}
@@ -224,7 +243,7 @@ func (uc *AuthUsecase) ValidateToken(ctx context.Context, tokenString string) (*
 	return nil, ErrInvalidToken
 }
 
-func (uc *AuthUsecase) GetUser(ctx context.Context, userID uuid.UUID) (*User, error) {
+func (uc *AuthUsecase) GetUser(ctx context.Context, userID int) (*User, error) {
 	user, err := uc.repo.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -238,7 +257,7 @@ func (uc *AuthUsecase) OIDCLogin(ctx context.Context, req *OIDCLoginRequest, org
 	if uc.oidcProvider == nil {
 		return nil, "", errors.New("Keycloak OIDC provider not available")
 	}
-	
+
 	// Exchange authorization code for token
 	token, err := uc.keycloakClient.GetToken(ctx, uc.keycloakConfig.Realm, gocloak.TokenOptions{
 		ClientID:     &uc.keycloakConfig.ClientID,
@@ -262,10 +281,10 @@ func (uc *AuthUsecase) OIDCLogin(ctx context.Context, req *OIDCLoginRequest, org
 	if err != nil {
 		// User doesn't exist, create new user
 		user = &User{
-			ID:             uuid.New(),
 			OrganizationID: orgID,
 			Email:          *userInfo.Email,
 			DisplayName:    *userInfo.Name,
+			Role:           UserRoleMember,
 			KeycloakID:     *userInfo.Sub,
 			Profile:        make(map[string]interface{}),
 			CreatedAt:      time.Now(),
@@ -289,14 +308,14 @@ func (uc *AuthUsecase) OIDCLogin(ctx context.Context, req *OIDCLoginRequest, org
 }
 
 // GenerateMQTTCredentials creates credentials for MQTT broker authentication
-func (uc *AuthUsecase) GenerateMQTTCredentials(ctx context.Context, userID uuid.UUID) (string, string, error) {
+func (uc *AuthUsecase) GenerateMQTTCredentials(ctx context.Context, userID int) (string, string, error) {
 	user, err := uc.repo.GetUserByID(ctx, userID)
 	if err != nil {
 		return "", "", err
 	}
 
 	// Generate MQTT username and password
-	mqttUsername := user.ID.String()
+	mqttUsername := fmt.Sprintf("user_%d", user.ID)
 	mqttPassword, err := uc.generateToken(user)
 	if err != nil {
 		return "", "", err
@@ -305,19 +324,91 @@ func (uc *AuthUsecase) GenerateMQTTCredentials(ctx context.Context, userID uuid.
 	return mqttUsername, mqttPassword, nil
 }
 
+// GetOrganizationUsers returns all users in the same organization
+func (uc *AuthUsecase) GetOrganizationUsers(ctx context.Context, orgID uuid.UUID) ([]*User, error) {
+	users, err := uc.repo.GetOrganizationUsers(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Remove password hashes from response
+	for _, user := range users {
+		user.PasswordHash = ""
+	}
+
+	return users, nil
+}
+
+// UpdateUser updates user information (admin only)
+func (uc *AuthUsecase) UpdateUser(ctx context.Context, requesterID, targetUserID int, req *UpdateUserRequest) error {
+	// Get requester to check permissions
+	requester, err := uc.repo.GetUserByID(ctx, requesterID)
+	if err != nil {
+		return err
+	}
+
+	// Only admins can update other users, users can update themselves (limited fields)
+	if requesterID != targetUserID && requester.Role != UserRoleAdmin {
+		return errors.New("insufficient permissions")
+	}
+
+	// If not admin, restrict what can be updated
+	if requester.Role != UserRoleAdmin {
+		// Non-admins can only update their own display name and avatar
+		restrictedReq := &UpdateUserRequest{
+			DisplayName: req.DisplayName,
+			AvatarURL:   req.AvatarURL,
+			Profile:     req.Profile,
+		}
+		return uc.repo.UpdateUser(ctx, targetUserID, restrictedReq)
+	}
+
+	return uc.repo.UpdateUser(ctx, targetUserID, req)
+}
+
+// DeleteUser deletes a user (admin only)
+func (uc *AuthUsecase) DeleteUser(ctx context.Context, requesterID, targetUserID int) error {
+	// Get requester to check permissions
+	requester, err := uc.repo.GetUserByID(ctx, requesterID)
+	if err != nil {
+		return err
+	}
+
+	// Only admins can delete users
+	if requester.Role != UserRoleAdmin {
+		return errors.New("insufficient permissions")
+	}
+
+	// Cannot delete yourself
+	if requesterID == targetUserID {
+		return errors.New("cannot delete yourself")
+	}
+
+	return uc.repo.DeleteUser(ctx, targetUserID)
+}
+
+// IsAdmin checks if a user is an admin
+func (uc *AuthUsecase) IsAdmin(ctx context.Context, userID int) (bool, error) {
+	user, err := uc.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return user.Role == UserRoleAdmin, nil
+}
+
 func (uc *AuthUsecase) generateToken(user *User) (string, error) {
 	now := time.Now()
 	claims := JWTClaims{
-		UserID:         user.ID.String(),
+		UserID:         user.ID,
 		OrganizationID: user.OrganizationID.String(),
 		Email:          user.Email,
-		Role:           "member", // Default role
+		Role:           string(user.Role),
 		KeycloakID:     user.KeycloakID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(uc.tokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Subject:   user.ID.String(),
+			Subject:   fmt.Sprintf("%d", user.ID),
 		},
 	}
 
