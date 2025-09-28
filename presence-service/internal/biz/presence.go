@@ -11,14 +11,14 @@ import (
 type PresenceStatus string
 
 const (
-	StatusOnline     PresenceStatus = "online"
-	StatusAway       PresenceStatus = "away"
-	StatusOffline    PresenceStatus = "offline"
+	StatusOnline       PresenceStatus = "online"
+	StatusAway         PresenceStatus = "away"
+	StatusOffline      PresenceStatus = "offline"
 	StatusDoNotDisturb PresenceStatus = "dnd"
 )
 
 type UserPresence struct {
-	UserID       uuid.UUID      `json:"user_id"`
+	UserID       int            `json:"user_id"`
 	Status       PresenceStatus `json:"status"`
 	LastSeen     time.Time      `json:"last_seen"`
 	DeviceInfo   string         `json:"device_info,omitempty"`
@@ -26,40 +26,40 @@ type UserPresence struct {
 }
 
 type DeviceSession struct {
-	ID            uuid.UUID  `json:"id"`
-	UserID        uuid.UUID  `json:"user_id"`
-	ClientID      string     `json:"client_id"`
-	DeviceInfo    string     `json:"device_info,omitempty"`
-	IP            string     `json:"ip,omitempty"`
-	ConnectedAt   time.Time  `json:"connected_at"`
+	ID             uuid.UUID  `json:"id"`
+	UserID         int        `json:"user_id"`
+	ClientID       string     `json:"client_id"`
+	DeviceInfo     string     `json:"device_info,omitempty"`
+	IP             string     `json:"ip,omitempty"`
+	ConnectedAt    time.Time  `json:"connected_at"`
 	DisconnectedAt *time.Time `json:"disconnected_at,omitempty"`
-	LastHeartbeat time.Time  `json:"last_heartbeat"`
+	LastHeartbeat  time.Time  `json:"last_heartbeat"`
 }
 
 type PresenceUpdate struct {
-	UserID       uuid.UUID      `json:"user_id"`
+	UserID       int            `json:"user_id"`
 	Status       PresenceStatus `json:"status"`
 	CustomStatus string         `json:"custom_status,omitempty"`
 	Timestamp    time.Time      `json:"timestamp"`
 }
 
 type HeartbeatMessage struct {
-	UserID    uuid.UUID `json:"user_id"`
+	UserID    int       `json:"user_id"`
 	ClientID  string    `json:"client_id"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
 type PresenceRepo interface {
 	SetUserPresence(ctx context.Context, presence *UserPresence) error
-	GetUserPresence(ctx context.Context, userID uuid.UUID) (*UserPresence, error)
-	GetMultipleUserPresence(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]*UserPresence, error)
-	
+	GetUserPresence(ctx context.Context, userID int) (*UserPresence, error)
+	GetMultipleUserPresence(ctx context.Context, userIDs []int) (map[int]*UserPresence, error)
+
 	CreateDeviceSession(ctx context.Context, session *DeviceSession) error
 	UpdateDeviceSession(ctx context.Context, session *DeviceSession) error
 	GetDeviceSession(ctx context.Context, clientID string) (*DeviceSession, error)
-	GetUserDeviceSessions(ctx context.Context, userID uuid.UUID) ([]*DeviceSession, error)
+	GetUserDeviceSessions(ctx context.Context, userID int) ([]*DeviceSession, error)
 	DisconnectDeviceSession(ctx context.Context, clientID string) error
-	
+
 	// Bulk operations for cleanup
 	GetStaleDeviceSessions(ctx context.Context, timeout time.Duration) ([]*DeviceSession, error)
 	CleanupStalePresence(ctx context.Context, timeout time.Duration) error
@@ -79,7 +79,7 @@ func NewPresenceUsecase(repo PresenceRepo, heartbeatInterval, offlineTimeout tim
 	}
 }
 
-func (uc *PresenceUsecase) HandleClientConnected(ctx context.Context, clientID string, userID uuid.UUID, deviceInfo, ip string) error {
+func (uc *PresenceUsecase) HandleClientConnected(ctx context.Context, clientID string, userID int, deviceInfo, ip string) error {
 	// Create device session
 	session := &DeviceSession{
 		ID:            uuid.New(),
@@ -174,15 +174,15 @@ func (uc *PresenceUsecase) HandleHeartbeat(ctx context.Context, payload []byte) 
 	return uc.repo.UpdateDeviceSession(ctx, session)
 }
 
-func (uc *PresenceUsecase) GetUserPresence(ctx context.Context, userID uuid.UUID) (*UserPresence, error) {
+func (uc *PresenceUsecase) GetUserPresence(ctx context.Context, userID int) (*UserPresence, error) {
 	return uc.repo.GetUserPresence(ctx, userID)
 }
 
-func (uc *PresenceUsecase) GetMultipleUserPresence(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]*UserPresence, error) {
+func (uc *PresenceUsecase) GetMultipleUserPresence(ctx context.Context, userIDs []int) (map[int]*UserPresence, error) {
 	return uc.repo.GetMultipleUserPresence(ctx, userIDs)
 }
 
-func (uc *PresenceUsecase) SetUserStatus(ctx context.Context, userID uuid.UUID, status PresenceStatus, customStatus string) error {
+func (uc *PresenceUsecase) SetUserStatus(ctx context.Context, userID int, status PresenceStatus, customStatus string) error {
 	presence := &UserPresence{
 		UserID:       userID,
 		Status:       status,
@@ -214,6 +214,6 @@ func (uc *PresenceUsecase) CleanupStalePresence(ctx context.Context) error {
 }
 
 // GetUserDeviceSessions returns all device sessions for a user
-func (uc *PresenceUsecase) GetUserDeviceSessions(ctx context.Context, userID uuid.UUID) ([]*DeviceSession, error) {
+func (uc *PresenceUsecase) GetUserDeviceSessions(ctx context.Context, userID int) ([]*DeviceSession, error) {
 	return uc.repo.GetUserDeviceSessions(ctx, userID)
 }

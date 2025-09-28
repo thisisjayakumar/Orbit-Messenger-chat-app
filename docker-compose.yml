@@ -1,7 +1,10 @@
+version: '3.8'
+
 services:
+  # Infrastructure Services
   postgres:
     image: postgres:15
-    container_name: chat-postgres
+    container_name: orbit-postgres
     environment:
       POSTGRES_DB: chat_db
       POSTGRES_USER: chat_user
@@ -11,19 +14,29 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat_user -d chat_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: chat-redis
+    container_name: orbit-redis
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   emqx:
     image: emqx/emqx:5.3
-    container_name: chat-emqx
+    container_name: orbit-emqx
     ports:
       - "1883:1883"    # MQTT
       - "8083:8083"    # MQTT over WebSocket
@@ -34,10 +47,15 @@ services:
       EMQX_HOST: 127.0.0.1
     volumes:
       - emqx_data:/opt/emqx/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18083"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   minio:
     image: minio/minio:latest
-    container_name: chat-minio
+    container_name: orbit-minio
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -47,30 +65,15 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
-
-  opensearch:
-    image: opensearchproject/opensearch:2.11.0
-    container_name: chat-opensearch
-    environment:
-      - cluster.name=opensearch-cluster
-      - node.name=opensearch-node1
-      - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-      - "DISABLE_INSTALL_DEMO_CONFIG=true"
-      - "DISABLE_SECURITY_PLUGIN=true"
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    ports:
-      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   keycloak:
     image: quay.io/keycloak/keycloak:23.0
-    container_name: chat-keycloak
+    container_name: orbit-keycloak
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin123
@@ -84,10 +87,16 @@ services:
     ports:
       - "8090:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     command: start-dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
-  # Go Services
+  # Backend Services
   auth-service:
     build:
       context: .
@@ -95,20 +104,28 @@ services:
     container_name: orbit-auth-service
     ports:
       - "8080:8080"
-      - "9090:9090"
     volumes:
       - ./auth-service/configs:/app/configs
       - ./logs:/app/logs
     depends_on:
-      - postgres
-      - redis
-      - keycloak
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
       - KEYCLOAK_URL=http://keycloak:8080
       - DATABASE_URL=postgres://chat_user:chat_password@postgres:5432/chat_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
       - PORT=8080
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   message-service:
     build:
@@ -117,23 +134,32 @@ services:
     container_name: orbit-message-service
     ports:
       - "8001:8001"
-      - "9091:9091"
     volumes:
       - ./message-service/configs:/app/configs
       - ./logs:/app/logs
     depends_on:
-      - postgres
-      - redis
-      - emqx
-      - auth-service
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
       - DATABASE_URL=postgres://chat_user:chat_password@postgres:5432/chat_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
       - MQTT_BROKER_URL=tcp://emqx:1883
       - MQTT_USERNAME=message_service
       - MQTT_PASSWORD=message_service_password
       - PORT=8001
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   presence-service:
     build:
@@ -142,14 +168,16 @@ services:
     container_name: orbit-presence-service
     ports:
       - "8002:8002"
-      - "9002:9002"
     volumes:
       - ./presence-service/configs:/app/configs
       - ./logs:/app/logs
     depends_on:
-      - postgres
-      - redis
-      - emqx
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
       - REDIS_ADDR=redis:6379
@@ -159,6 +187,11 @@ services:
       - MQTT_PASSWORD=presence_service_password
       - PORT=8002
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   chat-api:
     build:
@@ -167,25 +200,36 @@ services:
     container_name: orbit-chat-api
     ports:
       - "8003:8003"
-      - "9003:9003"
     volumes:
       - ./chat-api/configs:/app/configs
       - ./logs:/app/logs
     depends_on:
-      - postgres
-      - redis
-      - auth-service
-      - message-service
-      - presence-service
-      - media-service
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      message-service:
+        condition: service_healthy
+      presence-service:
+        condition: service_healthy
+      media-service:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
       - DATABASE_URL=postgres://chat_user:chat_password@postgres:5432/chat_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
       - MQTT_BROKER_URL=tcp://emqx:1883
       - MQTT_USERNAME=chat_api
       - MQTT_PASSWORD=chat_api_password
       - PORT=8003
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   media-service:
     build:
@@ -194,25 +238,34 @@ services:
     container_name: orbit-media-service
     ports:
       - "8004:8004"
-      - "9004:9004"
     volumes:
       - ./media-service/configs:/app/configs
       - ./logs:/app/logs
     depends_on:
-      - postgres
-      - redis
-      - minio
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/configs/config.yaml
+      - DATABASE_URL=postgres://chat_user:chat_password@postgres:5432/chat_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin123
       - MINIO_BUCKET=chat-attachments
+      - PORT=8004
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   postgres_data:
   redis_data:
   emqx_data:
   minio_data:
-  opensearch_data:

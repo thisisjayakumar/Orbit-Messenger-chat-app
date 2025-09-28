@@ -39,6 +39,8 @@ func (s *HTTPServer) setupRoutes() {
 
 	// User management endpoints
 	api.HandleFunc("/auth/users", s.authMiddleware(s.handleGetOrganizationUsers)).Methods("GET")
+	api.HandleFunc("/auth/users/search", s.authMiddleware(s.handleSearchUsers)).Methods("GET")
+	api.HandleFunc("/auth/users/username/{username}", s.authMiddleware(s.handleGetUserByUsername)).Methods("GET")
 	api.HandleFunc("/auth/users/{id}", s.authMiddleware(s.handleGetUser)).Methods("GET")
 	api.HandleFunc("/auth/users/{id}", s.authMiddleware(s.handleUpdateUser)).Methods("PUT")
 	api.HandleFunc("/auth/users/{id}", s.authMiddleware(s.handleDeleteUser)).Methods("DELETE")
@@ -358,4 +360,59 @@ func (s *HTTPServer) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, http.StatusOK, map[string]string{"message": "User deleted successfully"})
+}
+
+// handleSearchUsers searches for users by username or display name
+func (s *HTTPServer) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value("claims").(*biz.JWTClaims)
+	requesterID := claims.UserID
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		s.writeError(w, http.StatusBadRequest, "Query parameter 'q' is required")
+		return
+	}
+
+	// Remove @ prefix if present (Instagram-like search)
+	query = strings.TrimPrefix(query, "@")
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 10 // Default limit
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 50 {
+			limit = parsedLimit
+		}
+	}
+
+	users, err := s.authUc.SearchUsersByUsername(r.Context(), query, requesterID, limit)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, users)
+}
+
+// handleGetUserByUsername gets a user by their username
+func (s *HTTPServer) handleGetUserByUsername(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value("claims").(*biz.JWTClaims)
+	requesterID := claims.UserID
+
+	vars := mux.Vars(r)
+	username := vars["username"]
+
+	// Remove @ prefix if present
+	username = strings.TrimPrefix(username, "@")
+
+	user, err := s.authUc.GetUserByUsername(r.Context(), username, requesterID)
+	if err != nil {
+		if err == biz.ErrUserNotFound {
+			s.writeError(w, http.StatusNotFound, "User not found")
+			return
+		}
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, user)
 }

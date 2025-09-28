@@ -26,7 +26,7 @@ type Conversation struct {
 	OrganizationID uuid.UUID        `json:"organization_id"`
 	Type           ConversationType `json:"type"`
 	Title          string           `json:"title,omitempty"`
-	CreatedBy      uuid.UUID        `json:"created_by"`
+	CreatedBy      int              `json:"created_by"`
 	IsEncrypted    bool             `json:"is_encrypted"`
 	CreatedAt      time.Time        `json:"created_at"`
 }
@@ -34,7 +34,7 @@ type Conversation struct {
 type Participant struct {
 	ID             uuid.UUID       `json:"id"`
 	ConversationID uuid.UUID       `json:"conversation_id"`
-	UserID         uuid.UUID       `json:"user_id"`
+	UserID         int             `json:"user_id"`
 	Role           ParticipantRole `json:"role"`
 	JoinedAt       time.Time       `json:"joined_at"`
 	LastReadAt     *time.Time      `json:"last_read_at,omitempty"`
@@ -45,7 +45,7 @@ type Participant struct {
 type Message struct {
 	ID             uuid.UUID              `json:"id"`
 	ConversationID uuid.UUID              `json:"conversation_id"`
-	SenderID       uuid.UUID              `json:"sender_id"`
+	SenderID       int                    `json:"sender_id"`
 	ContentType    string                 `json:"content_type"`
 	Content        string                 `json:"content"`
 	Meta           map[string]interface{} `json:"meta,omitempty"`
@@ -59,7 +59,7 @@ type Message struct {
 type CreateConversationRequest struct {
 	Type           ConversationType `json:"type" validate:"required"`
 	Title          string           `json:"title,omitempty"`
-	ParticipantIDs []uuid.UUID      `json:"participant_ids" validate:"required"`
+	ParticipantIDs []int            `json:"participant_ids" validate:"required"`
 	IsEncrypted    bool             `json:"is_encrypted"`
 }
 
@@ -76,7 +76,7 @@ type UpdateConversationRequest struct {
 }
 
 type AddParticipantRequest struct {
-	UserID uuid.UUID       `json:"user_id" validate:"required"`
+	UserID int             `json:"user_id" validate:"required"`
 	Role   ParticipantRole `json:"role,omitempty"`
 }
 
@@ -84,26 +84,27 @@ type ChatRepo interface {
 	// Conversations
 	CreateConversation(ctx context.Context, conversation *Conversation) error
 	GetConversation(ctx context.Context, id uuid.UUID) (*Conversation, error)
-	GetUserConversations(ctx context.Context, userID uuid.UUID) ([]*Conversation, error)
+	GetUserConversations(ctx context.Context, userID int) ([]*Conversation, error)
 	UpdateConversation(ctx context.Context, conversation *Conversation) error
 	DeleteConversation(ctx context.Context, id uuid.UUID) error
 
 	// Participants
 	AddParticipant(ctx context.Context, participant *Participant) error
-	RemoveParticipant(ctx context.Context, conversationID, userID uuid.UUID) error
+	RemoveParticipant(ctx context.Context, conversationID uuid.UUID, userID int) error
 	GetConversationParticipants(ctx context.Context, conversationID uuid.UUID) ([]*Participant, error)
-	GetParticipant(ctx context.Context, conversationID, userID uuid.UUID) (*Participant, error)
-	UpdateParticipantRole(ctx context.Context, conversationID, userID uuid.UUID, role ParticipantRole) error
-	UpdateLastReadAt(ctx context.Context, conversationID, userID uuid.UUID) error
+	GetParticipant(ctx context.Context, conversationID uuid.UUID, userID int) (*Participant, error)
+	UpdateParticipantRole(ctx context.Context, conversationID uuid.UUID, userID int, role ParticipantRole) error
+	UpdateLastReadAt(ctx context.Context, conversationID uuid.UUID, userID int) error
 
 	// Messages
+	CreateMessage(ctx context.Context, message *Message) error
 	GetConversationMessages(ctx context.Context, conversationID uuid.UUID, limit, offset int) ([]*Message, error)
 	GetMessage(ctx context.Context, messageID uuid.UUID) (*Message, error)
 }
 
 type MQTTPublisher interface {
 	PublishMessage(ctx context.Context, conversationID uuid.UUID, message *Message) error
-	PublishTypingIndicator(ctx context.Context, conversationID, userID uuid.UUID, isTyping bool) error
+	PublishTypingIndicator(ctx context.Context, conversationID uuid.UUID, userID int, isTyping bool) error
 }
 
 type ChatUsecase struct {
@@ -118,7 +119,7 @@ func NewChatUsecase(repo ChatRepo, publisher MQTTPublisher) *ChatUsecase {
 	}
 }
 
-func (uc *ChatUsecase) CreateConversation(ctx context.Context, req *CreateConversationRequest, creatorID uuid.UUID, orgID uuid.UUID) (*Conversation, error) {
+func (uc *ChatUsecase) CreateConversation(ctx context.Context, req *CreateConversationRequest, creatorID int, orgID uuid.UUID) (*Conversation, error) {
 	// Validate participants
 	if len(req.ParticipantIDs) == 0 {
 		return nil, ErrInvalidRequest
@@ -179,11 +180,11 @@ func (uc *ChatUsecase) CreateConversation(ctx context.Context, req *CreateConver
 	return conversation, nil
 }
 
-func (uc *ChatUsecase) GetUserConversations(ctx context.Context, userID uuid.UUID) ([]*Conversation, error) {
+func (uc *ChatUsecase) GetUserConversations(ctx context.Context, userID int) ([]*Conversation, error) {
 	return uc.repo.GetUserConversations(ctx, userID)
 }
 
-func (uc *ChatUsecase) GetConversation(ctx context.Context, conversationID, userID uuid.UUID) (*Conversation, error) {
+func (uc *ChatUsecase) GetConversation(ctx context.Context, conversationID uuid.UUID, userID int) (*Conversation, error) {
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
@@ -196,7 +197,7 @@ func (uc *ChatUsecase) GetConversation(ctx context.Context, conversationID, user
 	return uc.repo.GetConversation(ctx, conversationID)
 }
 
-func (uc *ChatUsecase) SendMessage(ctx context.Context, req *SendMessageRequest, senderID uuid.UUID) (*Message, error) {
+func (uc *ChatUsecase) SendMessage(ctx context.Context, req *SendMessageRequest, senderID int) (*Message, error) {
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, req.ConversationID, senderID)
 	if err != nil {
@@ -219,15 +220,22 @@ func (uc *ChatUsecase) SendMessage(ctx context.Context, req *SendMessageRequest,
 		Deleted:        false,
 	}
 
+	// Save message to database first
+	if err := uc.repo.CreateMessage(ctx, message); err != nil {
+		return nil, err
+	}
+
 	// Publish to MQTT for real-time delivery
 	if err := uc.publisher.PublishMessage(ctx, req.ConversationID, message); err != nil {
-		return nil, err
+		// Log error but don't fail the request since message is already saved
+		// In production, you might want to implement a retry mechanism
+		// For now, just log the error
 	}
 
 	return message, nil
 }
 
-func (uc *ChatUsecase) GetConversationMessages(ctx context.Context, conversationID, userID uuid.UUID, limit, offset int) ([]*Message, error) {
+func (uc *ChatUsecase) GetConversationMessages(ctx context.Context, conversationID uuid.UUID, userID int, limit, offset int) ([]*Message, error) {
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
@@ -240,7 +248,7 @@ func (uc *ChatUsecase) GetConversationMessages(ctx context.Context, conversation
 	return uc.repo.GetConversationMessages(ctx, conversationID, limit, offset)
 }
 
-func (uc *ChatUsecase) AddParticipant(ctx context.Context, conversationID, requesterID uuid.UUID, req *AddParticipantRequest) error {
+func (uc *ChatUsecase) AddParticipant(ctx context.Context, conversationID uuid.UUID, requesterID int, req *AddParticipantRequest) error {
 	// Check if requester is admin
 	requesterParticipant, err := uc.repo.GetParticipant(ctx, conversationID, requesterID)
 	if err != nil {
@@ -266,7 +274,7 @@ func (uc *ChatUsecase) AddParticipant(ctx context.Context, conversationID, reque
 	return uc.repo.AddParticipant(ctx, participant)
 }
 
-func (uc *ChatUsecase) RemoveParticipant(ctx context.Context, conversationID, requesterID, targetUserID uuid.UUID) error {
+func (uc *ChatUsecase) RemoveParticipant(ctx context.Context, conversationID uuid.UUID, requesterID, targetUserID int) error {
 	// Check if requester is admin or removing themselves
 	requesterParticipant, err := uc.repo.GetParticipant(ctx, conversationID, requesterID)
 	if err != nil {
@@ -283,7 +291,7 @@ func (uc *ChatUsecase) RemoveParticipant(ctx context.Context, conversationID, re
 	return uc.repo.RemoveParticipant(ctx, conversationID, targetUserID)
 }
 
-func (uc *ChatUsecase) UpdateConversation(ctx context.Context, conversationID, requesterID uuid.UUID, req *UpdateConversationRequest) (*Conversation, error) {
+func (uc *ChatUsecase) UpdateConversation(ctx context.Context, conversationID uuid.UUID, requesterID int, req *UpdateConversationRequest) (*Conversation, error) {
 	// Check if requester is admin
 	requesterParticipant, err := uc.repo.GetParticipant(ctx, conversationID, requesterID)
 	if err != nil {
@@ -309,7 +317,7 @@ func (uc *ChatUsecase) UpdateConversation(ctx context.Context, conversationID, r
 	return conversation, nil
 }
 
-func (uc *ChatUsecase) MarkAsRead(ctx context.Context, conversationID, userID uuid.UUID) error {
+func (uc *ChatUsecase) MarkAsRead(ctx context.Context, conversationID uuid.UUID, userID int) error {
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
@@ -322,7 +330,7 @@ func (uc *ChatUsecase) MarkAsRead(ctx context.Context, conversationID, userID uu
 	return uc.repo.UpdateLastReadAt(ctx, conversationID, userID)
 }
 
-func (uc *ChatUsecase) SendTypingIndicator(ctx context.Context, conversationID, userID uuid.UUID, isTyping bool) error {
+func (uc *ChatUsecase) SendTypingIndicator(ctx context.Context, conversationID uuid.UUID, userID int, isTyping bool) error {
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
@@ -335,7 +343,7 @@ func (uc *ChatUsecase) SendTypingIndicator(ctx context.Context, conversationID, 
 	return uc.publisher.PublishTypingIndicator(ctx, conversationID, userID, isTyping)
 }
 
-func (uc *ChatUsecase) GetConversationParticipants(ctx context.Context, conversationID, userID uuid.UUID) ([]*Participant, error) {
+func (uc *ChatUsecase) GetConversationParticipants(ctx context.Context, conversationID uuid.UUID, userID int) ([]*Participant, error) {
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {

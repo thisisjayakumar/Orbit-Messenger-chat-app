@@ -43,7 +43,7 @@ func NewMQTTPublisher(config MQTTConfig) (biz.MQTTPublisher, error) {
 
 func (p *mqttPublisher) PublishMessage(ctx context.Context, conversationID uuid.UUID, message *biz.Message) error {
 	topic := fmt.Sprintf("chat/%s/messages", conversationID.String())
-	
+
 	payload, err := json.Marshal(message)
 	if err != nil {
 		return err
@@ -54,11 +54,11 @@ func (p *mqttPublisher) PublishMessage(ctx context.Context, conversationID uuid.
 	return token.Error()
 }
 
-func (p *mqttPublisher) PublishTypingIndicator(ctx context.Context, conversationID, userID uuid.UUID, isTyping bool) error {
+func (p *mqttPublisher) PublishTypingIndicator(ctx context.Context, conversationID uuid.UUID, userID int, isTyping bool) error {
 	topic := fmt.Sprintf("chat/%s/typing", conversationID.String())
-	
+
 	indicator := map[string]interface{}{
-		"user_id":   userID.String(),
+		"user_id":   userID,
 		"is_typing": isTyping,
 		"timestamp": time.Now(),
 	}

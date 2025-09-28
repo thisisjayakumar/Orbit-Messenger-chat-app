@@ -1,129 +1,62 @@
-# Orbit Messenger - Private Chat Application
+# Orbit Messenger Backend
 
-A comprehensive, enterprise-grade private chat application built with Go microservices, featuring real-time messaging, secure authentication, and scalable architecture.
+A comprehensive microservices-based chat application backend built with Go, featuring real-time messaging, secure authentication, and scalable architecture.
 
 ## 🏗️ Architecture Overview
 
-Orbit Messenger follows a distributed microservices architecture with the following components:
+The backend consists of 5 microservices working together to provide a complete chat platform:
 
-### Backend Services
+### Core Services
 
-1. **Auth Service** (Port 8080)
-   - User authentication and authorization
-   - Keycloak OIDC integration
-   - JWT token management
-   - MQTT credentials generation
+| Service | Port | Description |
+|---------|------|-------------|
+| **Auth Service** | 8080 | User authentication, JWT tokens, MQTT credentials |
+| **Message Service** | 8001 | MQTT message processing and database persistence |
+| **Presence Service** | 8002 | Real-time user status tracking and device sessions |
+| **Chat API** | 8003 | REST API for conversations, messages, and participants |
+| **Media Service** | 8004 | File upload/download with MinIO storage |
 
-2. **Message Service** (Port 8001)
-   - MQTT message subscription and processing
-   - Message persistence to PostgreSQL
-   - Idempotent message handling
+### Infrastructure Services
 
-3. **Chat API** (Port 8003)
-   - REST API for chat operations
-   - Conversation management
-   - Message history retrieval
-   - Participant management
-
-4. **Presence Service** (Port 8002)
-   - Real-time user status tracking
-   - MQTT Last Will and Testament (LWT)
-   - Redis-based presence caching
-   - Device session management
-
-5. **Media Service** (Port 8004)
-   - File upload and download management
-   - MinIO S3-compatible storage
-   - Antivirus scanning integration
-   - Thumbnail generation
-
-### Infrastructure Components
-
-- **PostgreSQL**: Primary database for persistent data
-- **Redis**: Caching and presence data
-- **EMQX**: MQTT broker for real-time messaging
-- **MinIO**: S3-compatible object storage
-- **Keycloak**: Identity and access management
-- **OpenSearch**: Full-text search (planned)
+| Service | Port | Description |
+|---------|------|-------------|
+| **PostgreSQL** | 5432 | Primary database for all persistent data |
+| **Redis** | 6379 | Caching and presence data storage |
+| **EMQX** | 1883/8083 | MQTT broker for real-time messaging |
+| **MinIO** | 9000/9001 | S3-compatible object storage for files |
+| **Keycloak** | 8090 | Identity and access management |
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- Go 1.21+ (optional, for development)
+- Go 1.21+ (for development)
 - jq (for testing scripts)
 
-### 1. Clone and Setup
+### 1. Start All Services
 
 ```bash
-git clone <repository-url>
-cd Orbit-Messenger-chat-app
+# Start everything with one command (run from this directory)
+docker-compose up -d
+
+# Check service status
+docker-compose ps
 ```
 
-### 2. Start All Services (One Command!)
+### 2. Verify Services
 
 ```bash
-# Start everything with one command
-./scripts/start-all-services.sh
-```
-
-This will:
-- Build and start all Go microservices
-- Start all infrastructure services (PostgreSQL, Redis, EMQX, MinIO, Keycloak, OpenSearch)
-- Configure proper service dependencies
-- Display all service URLs and credentials
-
-### 3. Frontend Environment Configuration
-
-Copy the following to your frontend `.env.local` file:
-
-```bash
-# API Service URLs
-NEXT_PUBLIC_AUTH_SERVICE_URL=http://localhost:8080
-NEXT_PUBLIC_CHAT_SERVICE_URL=http://localhost:8003
-NEXT_PUBLIC_PRESENCE_SERVICE_URL=http://localhost:8002
-NEXT_PUBLIC_MEDIA_SERVICE_URL=http://localhost:8004
-
-# MQTT Configuration
-NEXT_PUBLIC_MQTT_BROKER_URL=ws://localhost:8083/mqtt
-
-# Keycloak Configuration
-NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8090
-NEXT_PUBLIC_KEYCLOAK_REALM=master
-NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=orbit-messenger
-
-# App Configuration
-NEXT_PUBLIC_APP_NAME=Orbit Messenger
-NEXT_PUBLIC_APP_VERSION=1.0.0
-```
-
-### 4. Verify Services
-
-```bash
-# Check all services are running
-docker-compose -f docker-compose.dev.yml ps
-
 # Test all services
-./scripts/test-services.sh
+curl http://localhost:8080/health  # Auth Service
+curl http://localhost:8001/health  # Message Service
+curl http://localhost:8002/health  # Presence Service
+curl http://localhost:8003/health  # Chat API
+curl http://localhost:8004/health  # Media Service
 ```
 
-### 5. Stop All Services
+### 3. Access Management Interfaces
 
-```bash
-# Stop everything
-./scripts/stop-all-services.sh
-```
-
-### Service URLs
-
-Once started, your services will be available at:
-
-- **Auth Service**: http://localhost:8080
-- **Chat API**: http://localhost:8003  
-- **Presence Service**: http://localhost:8002
-- **Media Service**: http://localhost:8004
-- **Message Service**: http://localhost:8001
 - **Keycloak Admin**: http://localhost:8090 (admin/admin123)
 - **EMQX Dashboard**: http://localhost:18083 (admin/public)
 - **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin123)
@@ -220,9 +153,7 @@ The system uses MQTT for real-time communication:
 ├── presence-service/     # Presence tracking service
 ├── media-service/        # File handling service
 ├── shared/               # Shared utilities and proto files
-├── scripts/              # Deployment and testing scripts
-├── deployments/          # Kubernetes and Docker configs
-└── docs/                 # Documentation
+└── scripts/              # Database initialization scripts
 ```
 
 ### Building Services
@@ -232,7 +163,7 @@ Each service can be built independently:
 ```bash
 cd auth-service
 go mod tidy
-go build -o ../bin/auth-service ./cmd/auth-service
+go build -o bin/auth-service cmd/auth-service/main.go
 
 # Repeat for other services
 ```
@@ -244,8 +175,8 @@ Each service has its own `configs/config.yaml` file with service-specific settin
 ### Testing
 
 - Unit tests: `go test ./...` in each service directory
-- Integration tests: `./scripts/test-all-services.sh`
-- Load testing: Use the provided test scripts with tools like `ab` or `wrk`
+- Integration tests: Use the provided test scripts
+- Load testing: Use tools like `ab` or `wrk`
 
 ## 📈 Monitoring and Observability
 
@@ -257,32 +188,13 @@ Each service exposes health check endpoints:
 
 ### Logging
 
-All services use structured logging with configurable levels.
+All services use structured logging with configurable levels. Logs are stored in the `logs/` directory.
 
 ### Infrastructure Monitoring
 
 - **EMQX Dashboard**: http://localhost:18083 (admin/public)
 - **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin123)
 - **Keycloak Admin**: http://localhost:8090 (admin/admin123)
-
-## 🚢 Deployment
-
-### Docker Deployment
-
-```bash
-# Build all services
-docker-compose -f docker-compose.prod.yml build
-
-# Deploy
-docker-compose -f docker-compose.prod.yml up -d
-```
-
-### Kubernetes Deployment
-
-```bash
-# Apply Kubernetes manifests
-kubectl apply -f deployments/k8s/
-```
 
 ## 🔧 Configuration
 
@@ -315,6 +227,64 @@ KEYCLOAK_CLIENT_SECRET=client_secret
 JWT_SECRET=your-super-secret-jwt-key
 ```
 
+## 🚢 Deployment
+
+### Docker Deployment
+
+```bash
+# Build and start all services (run from this directory)
+docker-compose up --build -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f [service-name]
+
+# Stop all services
+docker-compose down
+```
+
+### Production Considerations
+
+- Use environment-specific configuration files
+- Set up proper SSL/TLS certificates
+- Configure firewall rules for exposed ports
+- Set up monitoring and alerting
+- Implement backup strategies for databases
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+1. **Services not starting**: Check Docker logs with `docker-compose logs [service-name]`
+2. **Database connection issues**: Verify PostgreSQL is running and accessible
+3. **MQTT connection problems**: Check EMQX dashboard and network connectivity
+4. **Authentication failures**: Verify Keycloak configuration and user setup
+
+### Debug Commands
+
+```bash
+# Check service health
+docker-compose ps
+
+# View service logs
+docker-compose logs -f auth-service
+
+# Test database connection
+docker exec orbit-postgres psql -U chat_user -d chat_db -c "SELECT 1;"
+
+# Test Redis connection
+docker exec orbit-redis redis-cli ping
+
+# Test MQTT connection
+docker exec orbit-emqx emqx_ctl status
+```
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -322,26 +292,3 @@ JWT_SECRET=your-super-secret-jwt-key
 3. Make your changes
 4. Add tests
 5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For support and questions:
-- Create an issue in the repository
-- Check the documentation in the `docs/` directory
-- Review the API documentation
-
-## 🔮 Roadmap
-
-- [ ] GraphQL API support
-- [ ] End-to-end encryption
-- [ ] Mobile push notifications
-- [ ] Advanced search with OpenSearch
-- [ ] Message reactions and threads
-- [ ] Voice and video calling
-- [ ] Advanced admin dashboard
-- [ ] Multi-language support
-- [ ] Advanced analytics and reporting

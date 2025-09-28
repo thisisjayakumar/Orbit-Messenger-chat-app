@@ -27,11 +27,11 @@ func (r *authRepo) CreateUser(ctx context.Context, user *biz.User) error {
 	profileJSON, _ := json.Marshal(user.Profile)
 
 	query := `
-		INSERT INTO users (organization_id, email, display_name, avatar_url, role, profile, created_at, password_hash, keycloak_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+		INSERT INTO users (organization_id, email, username, display_name, avatar_url, role, profile, created_at, password_hash, keycloak_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 
 	_, err := r.db.ExecContext(ctx, query,
-		user.OrganizationID, user.Email, user.DisplayName,
+		user.OrganizationID, user.Email, user.Username, user.DisplayName,
 		user.AvatarURL, user.Role, profileJSON, user.CreatedAt, user.PasswordHash, user.KeycloakID)
 
 	if err != nil {
@@ -53,11 +53,11 @@ func (r *authRepo) GetUserByEmail(ctx context.Context, email string, orgID uuid.
 	var profileJSON []byte
 
 	query := `
-		SELECT id, organization_id, email, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
+		SELECT id, organization_id, email, username, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
 		FROM users WHERE email = $1 AND organization_id = $2`
 
 	err := r.db.QueryRowContext(ctx, query, email, orgID).Scan(
-		&user.ID, &user.OrganizationID, &user.Email, &user.DisplayName,
+		&user.ID, &user.OrganizationID, &user.Email, &user.Username, &user.DisplayName,
 		&user.AvatarURL, &user.Role, &profileJSON, &user.CreatedAt, &user.LastSeenAt, &user.PasswordHash, &user.KeycloakID)
 
 	if err == sql.ErrNoRows {
@@ -76,11 +76,11 @@ func (r *authRepo) GetUserByEmailAnyOrg(ctx context.Context, email string) (*biz
 	var profileJSON []byte
 
 	query := `
-		SELECT id, organization_id, email, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
+		SELECT id, organization_id, email, username, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
 		FROM users WHERE email = $1 ORDER BY created_at DESC LIMIT 1`
 
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
-		&user.ID, &user.OrganizationID, &user.Email, &user.DisplayName,
+		&user.ID, &user.OrganizationID, &user.Email, &user.Username, &user.DisplayName,
 		&user.AvatarURL, &user.Role, &profileJSON, &user.CreatedAt, &user.LastSeenAt, &user.PasswordHash, &user.KeycloakID)
 
 	if err == sql.ErrNoRows {
@@ -99,11 +99,11 @@ func (r *authRepo) GetUserByID(ctx context.Context, id int) (*biz.User, error) {
 	var profileJSON []byte
 
 	query := `
-		SELECT id, organization_id, email, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
+		SELECT id, organization_id, email, username, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
 		FROM users WHERE id = $1`
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&user.ID, &user.OrganizationID, &user.Email, &user.DisplayName,
+		&user.ID, &user.OrganizationID, &user.Email, &user.Username, &user.DisplayName,
 		&user.AvatarURL, &user.Role, &profileJSON, &user.CreatedAt, &user.LastSeenAt, &user.PasswordHash, &user.KeycloakID)
 
 	if err == sql.ErrNoRows {
@@ -122,11 +122,11 @@ func (r *authRepo) GetUserByKeycloakID(ctx context.Context, keycloakID string) (
 	var profileJSON []byte
 
 	query := `
-		SELECT id, organization_id, email, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
+		SELECT id, organization_id, email, username, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
 		FROM users WHERE keycloak_id = $1`
 
 	err := r.db.QueryRowContext(ctx, query, keycloakID).Scan(
-		&user.ID, &user.OrganizationID, &user.Email, &user.DisplayName,
+		&user.ID, &user.OrganizationID, &user.Email, &user.Username, &user.DisplayName,
 		&user.AvatarURL, &user.Role, &profileJSON, &user.CreatedAt, &user.LastSeenAt, &user.PasswordHash, &user.KeycloakID)
 
 	if err == sql.ErrNoRows {
@@ -138,6 +138,70 @@ func (r *authRepo) GetUserByKeycloakID(ctx context.Context, keycloakID string) (
 
 	json.Unmarshal(profileJSON, &user.Profile)
 	return user, nil
+}
+
+func (r *authRepo) GetUserByUsername(ctx context.Context, username string, orgID uuid.UUID) (*biz.User, error) {
+	user := &biz.User{}
+	var profileJSON []byte
+
+	query := `
+		SELECT id, organization_id, email, username, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
+		FROM users WHERE LOWER(username) = LOWER($1) AND organization_id = $2`
+
+	err := r.db.QueryRowContext(ctx, query, username, orgID).Scan(
+		&user.ID, &user.OrganizationID, &user.Email, &user.Username, &user.DisplayName,
+		&user.AvatarURL, &user.Role, &profileJSON, &user.CreatedAt, &user.LastSeenAt, &user.PasswordHash, &user.KeycloakID)
+
+	if err == sql.ErrNoRows {
+		return nil, biz.ErrUserNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	json.Unmarshal(profileJSON, &user.Profile)
+	return user, nil
+}
+
+func (r *authRepo) SearchUsersByUsername(ctx context.Context, query string, orgID uuid.UUID, limit int) ([]*biz.User, error) {
+	var users []*biz.User
+
+	sqlQuery := `
+		SELECT id, organization_id, email, username, display_name, avatar_url, role, profile, created_at, last_seen_at, password_hash, keycloak_id
+		FROM users 
+		WHERE organization_id = $1 
+		AND (LOWER(username) LIKE LOWER($2) OR LOWER(display_name) LIKE LOWER($2))
+		ORDER BY 
+			CASE WHEN LOWER(username) = LOWER($3) THEN 1 ELSE 2 END,
+			CASE WHEN LOWER(username) LIKE LOWER($4) THEN 1 ELSE 2 END,
+			username
+		LIMIT $5`
+
+	searchPattern := "%" + query + "%"
+	exactMatch := query
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, orgID, searchPattern, exactMatch, query+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		user := &biz.User{}
+		var profileJSON []byte
+
+		err := rows.Scan(
+			&user.ID, &user.OrganizationID, &user.Email, &user.Username, &user.DisplayName,
+			&user.AvatarURL, &user.Role, &profileJSON, &user.CreatedAt, &user.LastSeenAt, &user.PasswordHash, &user.KeycloakID)
+		if err != nil {
+			return nil, err
+		}
+
+		json.Unmarshal(profileJSON, &user.Profile)
+		users = append(users, user)
+	}
+
+	return users, rows.Err()
 }
 
 func (r *authRepo) UpdateLastSeen(ctx context.Context, userID int) error {

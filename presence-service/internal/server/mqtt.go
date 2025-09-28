@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/google/uuid"
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/biz"
 )
 
 type MQTTServer struct {
-	client      mqtt.Client
-	presenceUc  *biz.PresenceUsecase
+	client     mqtt.Client
+	presenceUc *biz.PresenceUsecase
 }
 
 type MQTTConfig struct {
@@ -107,9 +107,9 @@ func (s *MQTTServer) handleClientConnected(ctx context.Context, topic string, pa
 
 	// Parse connection info from payload
 	var connInfo struct {
-		ClientID   string `json:"clientid"`
-		Username   string `json:"username"`
-		IPAddress  string `json:"ipaddress"`
+		ClientID    string `json:"clientid"`
+		Username    string `json:"username"`
+		IPAddress   string `json:"ipaddress"`
 		ConnectedAt int64  `json:"connected_at"`
 	}
 
@@ -118,8 +118,8 @@ func (s *MQTTServer) handleClientConnected(ctx context.Context, topic string, pa
 		return
 	}
 
-	// Extract user ID from username (assuming username is user UUID)
-	userID, err := uuid.Parse(connInfo.Username)
+	// Extract user ID from username (assuming username is user ID)
+	userID, err := strconv.Atoi(connInfo.Username)
 	if err != nil {
 		log.Printf("Invalid user ID in username: %s", connInfo.Username)
 		return
@@ -159,9 +159,9 @@ func (s *MQTTServer) defaultMessageHandler(client mqtt.Client, msg mqtt.Message)
 }
 
 // PublishPresenceUpdate publishes a presence update to MQTT
-func (s *MQTTServer) PublishPresenceUpdate(userID uuid.UUID, status biz.PresenceStatus, customStatus string) error {
-	topic := fmt.Sprintf("presence/%s/status", userID.String())
-	
+func (s *MQTTServer) PublishPresenceUpdate(userID int, status biz.PresenceStatus, customStatus string) error {
+	topic := fmt.Sprintf("presence/%d/status", userID)
+
 	update := biz.PresenceUpdate{
 		UserID:       userID,
 		Status:       status,

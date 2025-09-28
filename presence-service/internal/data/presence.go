@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/biz"
@@ -21,16 +21,16 @@ func NewPresenceRepo(redis *redis.Client) biz.PresenceRepo {
 }
 
 const (
-	userPresencePrefix    = "presence:user:"
-	deviceSessionPrefix   = "session:device:"
-	userSessionsPrefix    = "sessions:user:"
-	presenceExpiration    = 24 * time.Hour
-	sessionExpiration     = 24 * time.Hour
+	userPresencePrefix  = "presence:user:"
+	deviceSessionPrefix = "session:device:"
+	userSessionsPrefix  = "sessions:user:"
+	presenceExpiration  = 24 * time.Hour
+	sessionExpiration   = 24 * time.Hour
 )
 
 func (r *presenceRepo) SetUserPresence(ctx context.Context, presence *biz.UserPresence) error {
-	key := fmt.Sprintf("%s%s", userPresencePrefix, presence.UserID.String())
-	
+	key := fmt.Sprintf("%s%d", userPresencePrefix, presence.UserID)
+
 	data, err := json.Marshal(presence)
 	if err != nil {
 		return err
@@ -39,9 +39,9 @@ func (r *presenceRepo) SetUserPresence(ctx context.Context, presence *biz.UserPr
 	return r.redis.Set(ctx, key, data, presenceExpiration).Err()
 }
 
-func (r *presenceRepo) GetUserPresence(ctx context.Context, userID uuid.UUID) (*biz.UserPresence, error) {
-	key := fmt.Sprintf("%s%s", userPresencePrefix, userID.String())
-	
+func (r *presenceRepo) GetUserPresence(ctx context.Context, userID int) (*biz.UserPresence, error) {
+	key := fmt.Sprintf("%s%d", userPresencePrefix, userID)
+
 	data, err := r.redis.Get(ctx, key).Result()
 	if err == redis.Nil {
 		return &biz.UserPresence{
@@ -62,14 +62,14 @@ func (r *presenceRepo) GetUserPresence(ctx context.Context, userID uuid.UUID) (*
 	return &presence, nil
 }
 
-func (r *presenceRepo) GetMultipleUserPresence(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]*biz.UserPresence, error) {
+func (r *presenceRepo) GetMultipleUserPresence(ctx context.Context, userIDs []int) (map[int]*biz.UserPresence, error) {
 	if len(userIDs) == 0 {
-		return make(map[uuid.UUID]*biz.UserPresence), nil
+		return make(map[int]*biz.UserPresence), nil
 	}
 
 	keys := make([]string, len(userIDs))
 	for i, userID := range userIDs {
-		keys[i] = fmt.Sprintf("%s%s", userPresencePrefix, userID.String())
+		keys[i] = fmt.Sprintf("%s%d", userPresencePrefix, userID)
 	}
 
 	results, err := r.redis.MGet(ctx, keys...).Result()
@@ -77,10 +77,10 @@ func (r *presenceRepo) GetMultipleUserPresence(ctx context.Context, userIDs []uu
 		return nil, err
 	}
 
-	presenceMap := make(map[uuid.UUID]*biz.UserPresence)
+	presenceMap := make(map[int]*biz.UserPresence)
 	for i, result := range results {
 		userID := userIDs[i]
-		
+
 		if result == nil {
 			// User not found in cache, set as offline
 			presenceMap[userID] = &biz.UserPresence{
@@ -110,7 +110,7 @@ func (r *presenceRepo) GetMultipleUserPresence(ctx context.Context, userIDs []uu
 
 func (r *presenceRepo) CreateDeviceSession(ctx context.Context, session *biz.DeviceSession) error {
 	sessionKey := fmt.Sprintf("%s%s", deviceSessionPrefix, session.ClientID)
-	userSessionsKey := fmt.Sprintf("%s%s", userSessionsPrefix, session.UserID.String())
+	userSessionsKey := fmt.Sprintf("%s%s", userSessionsPrefix, strconv.Itoa(session.UserID))
 
 	data, err := json.Marshal(session)
 	if err != nil {
@@ -128,7 +128,7 @@ func (r *presenceRepo) CreateDeviceSession(ctx context.Context, session *biz.Dev
 
 func (r *presenceRepo) UpdateDeviceSession(ctx context.Context, session *biz.DeviceSession) error {
 	sessionKey := fmt.Sprintf("%s%s", deviceSessionPrefix, session.ClientID)
-	
+
 	data, err := json.Marshal(session)
 	if err != nil {
 		return err
@@ -139,7 +139,7 @@ func (r *presenceRepo) UpdateDeviceSession(ctx context.Context, session *biz.Dev
 
 func (r *presenceRepo) GetDeviceSession(ctx context.Context, clientID string) (*biz.DeviceSession, error) {
 	sessionKey := fmt.Sprintf("%s%s", deviceSessionPrefix, clientID)
-	
+
 	data, err := r.redis.Get(ctx, sessionKey).Result()
 	if err == redis.Nil {
 		return nil, biz.ErrSessionNotFound
@@ -156,9 +156,9 @@ func (r *presenceRepo) GetDeviceSession(ctx context.Context, clientID string) (*
 	return &session, nil
 }
 
-func (r *presenceRepo) GetUserDeviceSessions(ctx context.Context, userID uuid.UUID) ([]*biz.DeviceSession, error) {
-	userSessionsKey := fmt.Sprintf("%s%s", userSessionsPrefix, userID.String())
-	
+func (r *presenceRepo) GetUserDeviceSessions(ctx context.Context, userID int) ([]*biz.DeviceSession, error) {
+	userSessionsKey := fmt.Sprintf("%s%s", userSessionsPrefix, strconv.Itoa(userID))
+
 	clientIDs, err := r.redis.SMembers(ctx, userSessionsKey).Result()
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (r *presenceRepo) DisconnectDeviceSession(ctx context.Context, clientID str
 	session.DisconnectedAt = &now
 
 	sessionKey := fmt.Sprintf("%s%s", deviceSessionPrefix, clientID)
-	userSessionsKey := fmt.Sprintf("%s%s", userSessionsPrefix, session.UserID.String())
+	userSessionsKey := fmt.Sprintf("%s%s", userSessionsPrefix, strconv.Itoa(session.UserID))
 
 	data, err := json.Marshal(session)
 	if err != nil {
@@ -209,7 +209,7 @@ func (r *presenceRepo) GetStaleDeviceSessions(ctx context.Context, timeout time.
 	// This is a simplified implementation
 	// In a real system, you might want to use a more sophisticated approach
 	// like scanning through all session keys or maintaining a separate index
-	
+
 	cutoff := time.Now().Add(-timeout)
 	staleSessions := []*biz.DeviceSession{}
 
@@ -218,7 +218,7 @@ func (r *presenceRepo) GetStaleDeviceSessions(ctx context.Context, timeout time.
 	for iter.Next(ctx) {
 		key := iter.Val()
 		clientID := key[len(deviceSessionPrefix):]
-		
+
 		session, err := r.GetDeviceSession(ctx, clientID)
 		if err != nil {
 			continue
@@ -241,7 +241,7 @@ func (r *presenceRepo) CleanupStalePresence(ctx context.Context, timeout time.Du
 	for iter.Next(ctx) {
 		key := iter.Val()
 		userIDStr := key[len(userPresencePrefix):]
-		userID, err := uuid.Parse(userIDStr)
+		userID, err := strconv.Atoi(userIDStr)
 		if err != nil {
 			continue
 		}

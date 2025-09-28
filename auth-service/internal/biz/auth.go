@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Nerzal/gocloak/v13"
@@ -32,6 +34,7 @@ type User struct {
 	ID             int                    `json:"id"`
 	OrganizationID uuid.UUID              `json:"organization_id"`
 	Email          string                 `json:"email"`
+	Username       string                 `json:"username"`
 	DisplayName    string                 `json:"display_name"`
 	AvatarURL      string                 `json:"avatar_url,omitempty"`
 	Role           UserRole               `json:"role"`
@@ -56,6 +59,7 @@ type LoginRequest struct {
 
 type RegisterRequest struct {
 	Email            string     `json:"email" validate:"required,email"`
+	Username         string     `json:"username" validate:"required,min=3,max=30"`
 	Password         string     `json:"password" validate:"required,min=6"`
 	DisplayName      string     `json:"display_name" validate:"required"`
 	OrganizationID   *uuid.UUID `json:"organization_id,omitempty"`
@@ -85,6 +89,7 @@ type KeycloakConfig struct {
 }
 
 type UpdateUserRequest struct {
+	Username    *string                 `json:"username,omitempty"`
 	DisplayName *string                 `json:"display_name,omitempty"`
 	AvatarURL   *string                 `json:"avatar_url,omitempty"`
 	Role        *UserRole               `json:"role,omitempty"`
@@ -96,7 +101,9 @@ type AuthRepo interface {
 	GetUserByEmail(ctx context.Context, email string, orgID uuid.UUID) (*User, error)
 	GetUserByEmailAnyOrg(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, id int) (*User, error)
+	GetUserByUsername(ctx context.Context, username string, orgID uuid.UUID) (*User, error)
 	GetUserByKeycloakID(ctx context.Context, keycloakID string) (*User, error)
+	SearchUsersByUsername(ctx context.Context, query string, orgID uuid.UUID, limit int) ([]*User, error)
 	GetOrganizationUsers(ctx context.Context, orgID uuid.UUID) ([]*User, error)
 	UpdateUser(ctx context.Context, userID int, req *UpdateUserRequest) error
 	DeleteUser(ctx context.Context, userID int) error
@@ -138,6 +145,11 @@ func NewAuthUsecase(repo AuthRepo, jwtSecret string, tokenTTL time.Duration, key
 }
 
 func (uc *AuthUsecase) Register(ctx context.Context, req *RegisterRequest) (*User, string, error) {
+	// Validate username format
+	if err := uc.validateUsername(req.Username); err != nil {
+		return nil, "", err
+	}
+
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -168,10 +180,16 @@ func (uc *AuthUsecase) Register(ctx context.Context, req *RegisterRequest) (*Use
 		return nil, "", errors.New("either organization_id or organization_name is required")
 	}
 
+	// Check if username is already taken in this organization
+	if existingUser, _ := uc.repo.GetUserByUsername(ctx, req.Username, orgID); existingUser != nil {
+		return nil, "", errors.New("username already taken")
+	}
+
 	// Create user
 	user := &User{
 		OrganizationID: orgID,
 		Email:          req.Email,
+		Username:       req.Username,
 		DisplayName:    req.DisplayName,
 		Role:           UserRoleMember, // Default role
 		Profile:        make(map[string]interface{}),
@@ -322,6 +340,89 @@ func (uc *AuthUsecase) GenerateMQTTCredentials(ctx context.Context, userID int) 
 	}
 
 	return mqttUsername, mqttPassword, nil
+}
+
+// validateUsername validates username format (Instagram-like rules)
+func (uc *AuthUsecase) validateUsername(username string) error {
+	// Username rules (similar to Instagram):
+	// - 3-30 characters
+	// - Only letters, numbers, underscores, and periods
+	// - Cannot start or end with period
+	// - Cannot have consecutive periods
+	// - Case insensitive but stored as lowercase
+
+	if len(username) < 3 || len(username) > 30 {
+		return errors.New("username must be between 3 and 30 characters")
+	}
+
+	// Convert to lowercase
+	username = strings.ToLower(username)
+
+	// Check format
+	validUsername := regexp.MustCompile(`^[a-z0-9._]+$`)
+	if !validUsername.MatchString(username) {
+		return errors.New("username can only contain letters, numbers, underscores, and periods")
+	}
+
+	// Cannot start or end with period
+	if strings.HasPrefix(username, ".") || strings.HasSuffix(username, ".") {
+		return errors.New("username cannot start or end with a period")
+	}
+
+	// Cannot have consecutive periods
+	if strings.Contains(username, "..") {
+		return errors.New("username cannot contain consecutive periods")
+	}
+
+	// Reserved usernames
+	reserved := []string{"admin", "root", "api", "www", "mail", "support", "help", "info", "about", "contact"}
+	for _, r := range reserved {
+		if username == r {
+			return errors.New("username is reserved")
+		}
+	}
+
+	return nil
+}
+
+// SearchUsersByUsername searches for users by username pattern
+func (uc *AuthUsecase) SearchUsersByUsername(ctx context.Context, query string, requesterID int, limit int) ([]*User, error) {
+	// Get requester to get their organization
+	requester, err := uc.repo.GetUserByID(ctx, requesterID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Search within the same organization
+	users, err := uc.repo.SearchUsersByUsername(ctx, query, requester.OrganizationID, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Remove password hashes
+	for _, user := range users {
+		user.PasswordHash = ""
+	}
+
+	return users, nil
+}
+
+// GetUserByUsername gets a user by their username
+func (uc *AuthUsecase) GetUserByUsername(ctx context.Context, username string, requesterID int) (*User, error) {
+	// Get requester to get their organization
+	requester, err := uc.repo.GetUserByID(ctx, requesterID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get user by username within the same organization
+	user, err := uc.repo.GetUserByUsername(ctx, strings.ToLower(username), requester.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+
+	user.PasswordHash = ""
+	return user, nil
 }
 
 // GetOrganizationUsers returns all users in the same organization

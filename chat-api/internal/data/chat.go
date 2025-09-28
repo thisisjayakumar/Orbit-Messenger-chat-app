@@ -52,7 +52,7 @@ func (r *chatRepo) GetConversation(ctx context.Context, id uuid.UUID) (*biz.Conv
 	return conversation, nil
 }
 
-func (r *chatRepo) GetUserConversations(ctx context.Context, userID uuid.UUID) ([]*biz.Conversation, error) {
+func (r *chatRepo) GetUserConversations(ctx context.Context, userID int) ([]*biz.Conversation, error) {
 	query := `
 		SELECT c.id, c.organization_id, c.type, c.title, c.created_by, c.is_encrypted, c.created_at
 		FROM conversations c
@@ -109,7 +109,7 @@ func (r *chatRepo) AddParticipant(ctx context.Context, participant *biz.Particip
 	return err
 }
 
-func (r *chatRepo) RemoveParticipant(ctx context.Context, conversationID, userID uuid.UUID) error {
+func (r *chatRepo) RemoveParticipant(ctx context.Context, conversationID uuid.UUID, userID int) error {
 	query := `DELETE FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2`
 	_, err := r.db.ExecContext(ctx, query, conversationID, userID)
 	return err
@@ -146,7 +146,7 @@ func (r *chatRepo) GetConversationParticipants(ctx context.Context, conversation
 	return participants, nil
 }
 
-func (r *chatRepo) GetParticipant(ctx context.Context, conversationID, userID uuid.UUID) (*biz.Participant, error) {
+func (r *chatRepo) GetParticipant(ctx context.Context, conversationID uuid.UUID, userID int) (*biz.Participant, error) {
 	participant := &biz.Participant{}
 
 	query := `
@@ -168,13 +168,13 @@ func (r *chatRepo) GetParticipant(ctx context.Context, conversationID, userID uu
 	return participant, nil
 }
 
-func (r *chatRepo) UpdateParticipantRole(ctx context.Context, conversationID, userID uuid.UUID, role biz.ParticipantRole) error {
+func (r *chatRepo) UpdateParticipantRole(ctx context.Context, conversationID uuid.UUID, userID int, role biz.ParticipantRole) error {
 	query := `UPDATE conversation_participants SET role = $3 WHERE conversation_id = $1 AND user_id = $2`
 	_, err := r.db.ExecContext(ctx, query, conversationID, userID, role)
 	return err
 }
 
-func (r *chatRepo) UpdateLastReadAt(ctx context.Context, conversationID, userID uuid.UUID) error {
+func (r *chatRepo) UpdateLastReadAt(ctx context.Context, conversationID uuid.UUID, userID int) error {
 	query := `UPDATE conversation_participants SET last_read_at = NOW() WHERE conversation_id = $1 AND user_id = $2`
 	_, err := r.db.ExecContext(ctx, query, conversationID, userID)
 	return err
@@ -223,6 +223,20 @@ func (r *chatRepo) GetConversationMessages(ctx context.Context, conversationID u
 	}
 
 	return messages, nil
+}
+
+func (r *chatRepo) CreateMessage(ctx context.Context, message *biz.Message) error {
+	metaJSON, _ := json.Marshal(message.Meta)
+
+	query := `
+		INSERT INTO messages (id, conversation_id, sender_id, content_type, content, meta, dedupe_key, sent_at, edited_at, deleted)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+
+	_, err := r.db.ExecContext(ctx, query,
+		message.ID, message.ConversationID, message.SenderID, message.ContentType,
+		message.Content, metaJSON, message.DedupeKey, message.SentAt, message.EditedAt, message.Deleted)
+
+	return err
 }
 
 func (r *chatRepo) GetMessage(ctx context.Context, messageID uuid.UUID) (*biz.Message, error) {

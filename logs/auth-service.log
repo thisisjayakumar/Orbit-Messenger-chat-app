@@ -1,5 +1,5 @@
-DEBUG msg=config loaded: config.yaml format: yaml
-2025/09/21 12:39:10 Auth service starting on 0.0.0.0:8000
-2025/09/22 11:28:55 Shutting down server...
-2025/09/22 11:28:55 Server exited
-INFO msg=watcher's ctx cancel : context canceled
+DEBUG msg=config loaded: config-local.yaml format: yaml
+2025/09/28 11:42:30 Using database source: postgres://chat_user:chat_password@localhost:5432/chat_db?sslmode=disable
+2025/09/28 11:42:30 Warning: Failed to initialize Keycloak OIDC provider: 404 Not Found: 404 page not found
+. Direct auth will still work.
+2025/09/28 11:42:30 Auth service starting on 0.0.0.0:8081

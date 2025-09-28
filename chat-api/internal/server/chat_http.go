@@ -162,7 +162,7 @@ func (s *ChatHTTPServer) handleRemoveParticipant(w http.ResponseWriter, r *http.
 
 	vars := mux.Vars(r)
 	targetUserIDStr := vars["userID"]
-	targetUserID, err := uuid.Parse(targetUserIDStr)
+	targetUserID, err := strconv.Atoi(targetUserIDStr)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
 		return
@@ -287,7 +287,7 @@ func (s *ChatHTTPServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc 
 			return
 		}
 
-		userID, err := uuid.Parse(userIDStr)
+		userID, err := strconv.Atoi(userIDStr)
 		if err != nil {
 			s.writeError(w, http.StatusUnauthorized, "Invalid user ID")
 			return
@@ -307,8 +307,8 @@ func (s *ChatHTTPServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc 
 	}
 }
 
-func (s *ChatHTTPServer) getUserIDFromContext(ctx context.Context) uuid.UUID {
-	return ctx.Value("userID").(uuid.UUID)
+func (s *ChatHTTPServer) getUserIDFromContext(ctx context.Context) int {
+	return ctx.Value("userID").(int)
 }
 
 func (s *ChatHTTPServer) getOrgIDFromContext(ctx context.Context) uuid.UUID {

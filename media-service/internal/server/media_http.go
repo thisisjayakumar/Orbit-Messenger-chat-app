@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -11,6 +13,11 @@ import (
 
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/media-service/internal/biz"
 )
+
+// Context key type for avoiding collisions
+type contextKey string
+
+const userIDKey contextKey = "userID"
 
 type MediaHTTPServer struct {
 	mediaUc *biz.MediaUsecase
@@ -245,21 +252,34 @@ func (s *MediaHTTPServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc
 			return
 		}
 
-		userID, err := uuid.Parse(userIDStr)
+		// Try to parse as UUID first, if that fails, try as integer and convert
+		var userID uuid.UUID
+		var err error
+
+		userID, err = uuid.Parse(userIDStr)
 		if err != nil {
-			s.writeError(w, http.StatusUnauthorized, "Invalid user ID")
-			return
+			// If UUID parsing fails, try parsing as integer and create a deterministic UUID
+			// This handles cases where user ID comes as integer from frontend
+			if intID, intErr := strconv.Atoi(userIDStr); intErr == nil {
+				// Create a deterministic UUID from integer ID
+				// Using a namespace UUID to ensure consistency
+				namespace := uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8") // Standard namespace UUID
+				userID = uuid.NewSHA1(namespace, []byte(fmt.Sprintf("user_%d", intID)))
+			} else {
+				s.writeError(w, http.StatusUnauthorized, "Invalid user ID format")
+				return
+			}
 		}
 
 		// Add to context
-		ctx := context.WithValue(r.Context(), "userID", userID)
+		ctx := context.WithValue(r.Context(), userIDKey, userID)
 
 		next(w, r.WithContext(ctx))
 	}
 }
 
 func (s *MediaHTTPServer) getUserIDFromContext(ctx context.Context) uuid.UUID {
-	return ctx.Value("userID").(uuid.UUID)
+	return ctx.Value(userIDKey).(uuid.UUID)
 }
 
 func (s *MediaHTTPServer) handleError(w http.ResponseWriter, err error) {

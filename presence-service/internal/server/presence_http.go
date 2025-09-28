@@ -3,8 +3,8 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/biz"
@@ -33,6 +33,7 @@ func (s *PresenceHTTPServer) setupRoutes() {
 	api.HandleFunc("/presence/{userID}/status", s.handleSetUserStatus).Methods("PUT")
 	api.HandleFunc("/presence/bulk", s.handleGetMultipleUserPresence).Methods("POST")
 	api.HandleFunc("/presence/{userID}/sessions", s.handleGetUserSessions).Methods("GET")
+	api.HandleFunc("/presence/connect", s.handleClientConnect).Methods("POST")
 }
 
 func (s *PresenceHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +54,7 @@ func (s *PresenceHTTPServer) handleGetUserPresence(w http.ResponseWriter, r *htt
 	vars := mux.Vars(r)
 	userIDStr := vars["userID"]
 
-	userID, err := uuid.Parse(userIDStr)
+	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
 		return
@@ -72,7 +73,7 @@ func (s *PresenceHTTPServer) handleSetUserStatus(w http.ResponseWriter, r *http.
 	vars := mux.Vars(r)
 	userIDStr := vars["userID"]
 
-	userID, err := uuid.Parse(userIDStr)
+	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
 		return
@@ -142,9 +143,9 @@ func (s *PresenceHTTPServer) handleGetMultipleUserPresence(w http.ResponseWriter
 		return
 	}
 
-	userIDs := make([]uuid.UUID, len(req.UserIDs))
+	userIDs := make([]int, len(req.UserIDs))
 	for i, userIDStr := range req.UserIDs {
-		userID, err := uuid.Parse(userIDStr)
+		userID, err := strconv.Atoi(userIDStr)
 		if err != nil {
 			s.writeError(w, http.StatusBadRequest, "Invalid user ID: "+userIDStr)
 			return
@@ -161,7 +162,7 @@ func (s *PresenceHTTPServer) handleGetMultipleUserPresence(w http.ResponseWriter
 	// Convert map keys to strings for JSON response
 	response := make(map[string]*biz.UserPresence)
 	for userID, presence := range presenceMap {
-		response[userID.String()] = presence
+		response[strconv.Itoa(userID)] = presence
 	}
 
 	s.writeJSON(w, http.StatusOK, response)
@@ -171,7 +172,7 @@ func (s *PresenceHTTPServer) handleGetUserSessions(w http.ResponseWriter, r *htt
 	vars := mux.Vars(r)
 	userIDStr := vars["userID"]
 
-	userID, err := uuid.Parse(userIDStr)
+	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
 		return
@@ -184,6 +185,44 @@ func (s *PresenceHTTPServer) handleGetUserSessions(w http.ResponseWriter, r *htt
 	}
 
 	s.writeJSON(w, http.StatusOK, sessions)
+}
+
+func (s *PresenceHTTPServer) handleClientConnect(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ClientID    string `json:"client_id"`
+		UserID      int    `json:"user_id"`
+		DeviceInfo  string `json:"device_info"`
+		IPAddress   string `json:"ip_address"`
+		ConnectedAt string `json:"connected_at"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	if req.ClientID == "" || req.UserID == 0 {
+		s.writeError(w, http.StatusBadRequest, "client_id and user_id are required")
+		return
+	}
+
+	// Get client IP if not provided
+	if req.IPAddress == "" || req.IPAddress == "unknown" {
+		req.IPAddress = r.RemoteAddr
+	}
+
+	// Handle client connection
+	if err := s.presenceUc.HandleClientConnected(r.Context(), req.ClientID, req.UserID, req.DeviceInfo, req.IPAddress); err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Publish presence update via MQTT
+	if s.mqttServer != nil {
+		s.mqttServer.PublishPresenceUpdate(req.UserID, biz.StatusOnline, "Available")
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]string{"status": "connected"})
 }
 
 func (s *PresenceHTTPServer) writeJSON(w http.ResponseWriter, status int, data interface{}) {
