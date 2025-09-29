@@ -1,3 +1,0 @@
-2025/09/28 11:42:30 Connected to MQTT broker
-2025/09/28 11:42:30 Message service starting on port 8083
-2025/09/28 11:42:30 Failed to start server:listen tcp :8083: bind: address already in use

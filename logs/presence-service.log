@@ -1,3 +1,0 @@
-2025/09/28 11:42:30 Connected to MQTT broker
-2025/09/28 11:42:30 Presence service starting on port 8084
-2025/09/28 11:42:30 Failed to start server:listen tcp :8084: bind: address already in use

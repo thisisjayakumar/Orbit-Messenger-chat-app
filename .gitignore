@@ -1,0 +1,36 @@
+# Build artifacts
+bin/
+*/bin/
+*/*/bin/
+
+# Log files
+logs/
+*/logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+*.swp
+*.swo
+*~
+*.bak
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# Docker
+.dockerignore
