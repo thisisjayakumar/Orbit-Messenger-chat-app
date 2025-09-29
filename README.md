@@ -30,24 +30,31 @@ The backend consists of 5 microservices working together to provide a complete c
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Go 1.21+ (for development)
-- jq (for testing scripts)
+- **Docker and Docker Compose** (for containerized deployment)
+- **Go 1.23+** (for development)
+- **Protocol Buffer tools** (for code generation)
+- **Make** (for build automation)
 
-### 1. Start All Services
+### Option 1: Docker Compose (Recommended)
+
+#### 1. Start All Services
 
 ```bash
-# Start everything with one command (run from this directory)
+# Clone and navigate to the project
+git clone <repository-url>
+cd Orbit-Messenger-chat-app
+
+# Start all services with Docker Compose
 docker-compose up -d
 
 # Check service status
 docker-compose ps
 ```
 
-### 2. Verify Services
+#### 2. Verify Services
 
 ```bash
-# Test all services
+# Test all services health endpoints
 curl http://localhost:8080/health  # Auth Service
 curl http://localhost:8001/health  # Message Service
 curl http://localhost:8002/health  # Presence Service
@@ -55,11 +62,60 @@ curl http://localhost:8003/health  # Chat API
 curl http://localhost:8004/health  # Media Service
 ```
 
-### 3. Access Management Interfaces
+#### 3. Access Management Interfaces
 
 - **Keycloak Admin**: http://localhost:8090 (admin/admin123)
 - **EMQX Dashboard**: http://localhost:18083 (admin/public)
 - **MinIO Console**: http://localhost:9001 (minioadmin/minioadmin123)
+
+### Option 2: Local Development
+
+#### 1. Install Development Tools
+
+```bash
+# Install required tools
+make init
+
+# Download dependencies
+make deps
+```
+
+#### 2. Start Infrastructure Services
+
+```bash
+# Start only infrastructure services
+docker-compose up -d postgres redis emqx minio keycloak
+
+# Wait for services to be ready (check with docker-compose ps)
+```
+
+#### 3. Build and Run Services Locally
+
+```bash
+# Generate code (protobuf, wire)
+make generate
+
+# Build all services
+make build
+
+# Run individual services (in separate terminals)
+make run-auth-service
+make run-message-service
+make run-presence-service
+make run-chat-api
+make run-media-service
+```
+
+#### 4. Alternative: Run All Services
+
+```bash
+# Run all services with go run
+make run-auth-service & \
+make run-message-service & \
+make run-presence-service & \
+make run-chat-api & \
+make run-media-service
+```
 
 ## 📊 Database Schema
 
@@ -142,41 +198,283 @@ The system uses MQTT for real-time communication:
 - `$SYS/brokers/+/clients/+/connected` - Client connections
 - `$SYS/brokers/+/clients/+/disconnected` - Client disconnections
 
+## 🧪 API Testing
+
+### Authentication Flow
+
+#### 1. Register a User
+
+```bash
+# Register a new user
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "password123",
+    "display_name": "Test User"
+  }'
+```
+
+#### 2. Login and Get Token
+
+```bash
+# Login and get JWT token
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "password123"
+  }'
+
+# Save the token from response for subsequent requests
+export TOKEN="your-jwt-token-here"
+```
+
+#### 3. Get MQTT Credentials
+
+```bash
+# Get MQTT credentials for real-time messaging
+curl -X GET http://localhost:8080/api/v1/auth/mqtt-credentials \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Chat API Testing
+
+#### 1. Create a Conversation
+
+```bash
+# Create a direct message conversation
+curl -X POST http://localhost:8003/api/v1/conversations \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "DM",
+    "participants": ["user-id-here"]
+  }'
+```
+
+#### 2. Send a Message
+
+```bash
+# Send a text message
+curl -X POST http://localhost:8003/api/v1/conversations/{conversation-id}/messages \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Hello, World!",
+    "content_type": "text/plain"
+  }'
+```
+
+#### 3. Get Messages
+
+```bash
+# Get conversation messages
+curl -X GET http://localhost:8003/api/v1/conversations/{conversation-id}/messages \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Presence Service Testing
+
+```bash
+# Get user presence
+curl -X GET http://localhost:8002/api/v1/presence/{user-id} \
+  -H "Authorization: Bearer $TOKEN"
+
+# Set user status
+curl -X PUT http://localhost:8002/api/v1/presence/{user-id}/status \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "online",
+    "status_text": "Available"
+  }'
+```
+
+### Media Service Testing
+
+#### 1. Initiate File Upload
+
+```bash
+# Initiate file upload
+curl -X POST http://localhost:8004/api/v1/upload/initiate \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_name": "test.txt",
+    "mime_type": "text/plain",
+    "size": 1024
+  }'
+```
+
+#### 2. Complete Upload
+
+```bash
+# Complete file upload
+curl -X POST http://localhost:8004/api/v1/upload/{upload-id}/complete \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### MQTT Testing
+
+#### Connect to MQTT Broker
+
+```bash
+# Install MQTT client tools
+# On macOS: brew install mosquitto
+# On Ubuntu: sudo apt-get install mosquitto-clients
+
+# Subscribe to messages
+mosquitto_sub -h localhost -p 1883 \
+  -u "your-mqtt-username" \
+  -P "your-mqtt-password" \
+  -t "chat/{conversation-id}/messages"
+
+# Publish a test message
+mosquitto_pub -h localhost -p 1883 \
+  -u "your-mqtt-username" \
+  -P "your-mqtt-password" \
+  -t "chat/{conversation-id}/messages" \
+  -m '{"content": "Test MQTT message"}'
+```
+
 ## 🛠️ Development
 
 ### Project Structure
 
 ```
 ├── auth-service/          # Authentication service
+│   ├── cmd/auth-service/  # Main application entry
+│   ├── internal/         # Internal packages
+│   │   ├── biz/          # Business logic
+│   │   ├── data/         # Data access layer
+│   │   ├── server/       # HTTP server
+│   │   └── conf/         # Configuration & protobuf
+│   ├── configs/          # Configuration files
+│   └── Dockerfile        # Container definition
 ├── message-service/       # Message processing service
 ├── chat-api/             # Chat REST API
 ├── presence-service/     # Presence tracking service
 ├── media-service/        # File handling service
 ├── shared/               # Shared utilities and proto files
-└── scripts/              # Database initialization scripts
+├── scripts/              # Database initialization scripts
+├── docker-compose.yml    # Infrastructure orchestration
+├── go.mod                # Go module dependencies
+└── Makefile              # Build automation
 ```
 
-### Building Services
+### Development Commands
 
-Each service can be built independently:
+#### Code Generation
 
 ```bash
-cd auth-service
-go mod tidy
-go build -o bin/auth-service cmd/auth-service/main.go
+# Install development tools
+make init
 
-# Repeat for other services
+# Generate protobuf files and wire code
+make generate
+
+# Generate only shared proto files
+make generate-shared-proto
+
+# Generate only service proto files
+make generate-service-protos
+
+# Generate wire dependency injection
+make wire
+```
+
+#### Building Services
+
+```bash
+# Build all services
+make build
+
+# Build specific service
+make build-auth-service
+make build-message-service
+make build-chat-api
+make build-presence-service
+make build-media-service
+```
+
+#### Running Services
+
+```bash
+# Run specific service locally
+make run-auth-service
+make run-message-service
+make run-chat-api
+make run-presence-service
+make run-media-service
+```
+
+#### Testing
+
+```bash
+# Run all tests
+make test
+
+# Run tests for specific service
+make test-auth-service
+make test-message-service
+make test-chat-api
+make test-presence-service
+make test-media-service
+```
+
+#### Code Quality
+
+```bash
+# Format code
+make fmt
+
+# Run linter
+make lint
+
+# Download and tidy dependencies
+make deps
+
+# Clean build artifacts
+make clean
 ```
 
 ### Configuration
 
-Each service has its own `configs/config.yaml` file with service-specific settings.
+Each service has its own configuration files:
+- `configs/config.yaml` - Production configuration
+- `configs/config-local.yaml` - Local development configuration
 
-### Testing
+### Environment Variables
 
-- Unit tests: `go test ./...` in each service directory
-- Integration tests: Use the provided test scripts
-- Load testing: Use tools like `ab` or `wrk`
+Services can be configured using environment variables:
+
+```bash
+# Database
+export DATABASE_URL="postgres://chat_user:chat_password@localhost:5432/chat_db?sslmode=disable"
+
+# Redis
+export REDIS_ADDR="localhost:6379"
+
+# MQTT
+export MQTT_BROKER_URL="tcp://localhost:1883"
+export MQTT_USERNAME="service_username"
+export MQTT_PASSWORD="service_password"
+
+# MinIO
+export MINIO_ENDPOINT="localhost:9000"
+export MINIO_ACCESS_KEY="minioadmin"
+export MINIO_SECRET_KEY="minioadmin123"
+
+# Keycloak
+export KEYCLOAK_URL="http://localhost:8090"
+export KEYCLOAK_REALM="orbit-chat"
+export KEYCLOAK_CLIENT_ID="orbit-chat-client"
+export KEYCLOAK_CLIENT_SECRET="your-client-secret"
+
+# Security
+export JWT_SECRET="your-super-secret-jwt-key"
+```
 
 ## 📈 Monitoring and Observability
 
@@ -257,33 +555,270 @@ docker-compose down
 
 ### Common Issues
 
-1. **Services not starting**: Check Docker logs with `docker-compose logs [service-name]`
-2. **Database connection issues**: Verify PostgreSQL is running and accessible
-3. **MQTT connection problems**: Check EMQX dashboard and network connectivity
-4. **Authentication failures**: Verify Keycloak configuration and user setup
+#### 1. Services Not Starting
+
+```bash
+# Check Docker Compose logs
+docker-compose logs [service-name]
+
+# Check specific service logs
+docker-compose logs auth-service
+docker-compose logs message-service
+docker-compose logs chat-api
+docker-compose logs presence-service
+docker-compose logs media-service
+
+# Check infrastructure services
+docker-compose logs postgres
+docker-compose logs redis
+docker-compose logs emqx
+docker-compose logs minio
+docker-compose logs keycloak
+```
+
+#### 2. Database Connection Issues
+
+```bash
+# Test PostgreSQL connection
+docker exec orbit-postgres psql -U chat_user -d chat_db -c "SELECT 1;"
+
+# Check database logs
+docker-compose logs postgres
+
+# Verify database initialization
+docker exec orbit-postgres psql -U chat_user -d chat_db -c "\dt"
+```
+
+#### 3. MQTT Connection Problems
+
+```bash
+# Check EMQX status
+docker exec orbit-emqx emqx_ctl status
+
+# Check EMQX dashboard
+open http://localhost:18083
+
+# Test MQTT connection
+mosquitto_pub -h localhost -p 1883 -t "test/topic" -m "test message"
+```
+
+#### 4. Authentication Failures
+
+```bash
+# Check Keycloak logs
+docker-compose logs keycloak
+
+# Access Keycloak admin console
+open http://localhost:8090
+
+# Verify Keycloak configuration
+curl http://localhost:8090/realms/orbit-chat/.well-known/openid_configuration
+```
+
+#### 5. Redis Connection Issues
+
+```bash
+# Test Redis connection
+docker exec orbit-redis redis-cli ping
+
+# Check Redis logs
+docker-compose logs redis
+```
+
+#### 6. MinIO Storage Issues
+
+```bash
+# Check MinIO logs
+docker-compose logs minio
+
+# Access MinIO console
+open http://localhost:9001
+
+# Test MinIO connection
+curl http://localhost:9000/minio/health/live
+```
 
 ### Debug Commands
 
 ```bash
-# Check service health
+# Check all service status
 docker-compose ps
 
+# View real-time logs
+docker-compose logs -f
+
+# Restart specific service
+docker-compose restart [service-name]
+
+# Rebuild and restart service
+docker-compose up --build -d [service-name]
+
+# Check service health
+curl http://localhost:8080/health  # Auth Service
+curl http://localhost:8001/health  # Message Service
+curl http://localhost:8002/health  # Presence Service
+curl http://localhost:8003/health  # Chat API
+curl http://localhost:8004/health  # Media Service
+```
+
+### Development Debugging
+
+#### Local Development Issues
+
+```bash
+# Check if infrastructure services are running
+docker-compose ps postgres redis emqx minio keycloak
+
+# Verify Go modules
+go mod tidy
+go mod verify
+
+# Check generated code
+make generate
+
+# Run with verbose logging
+go run ./auth-service/cmd/auth-service -conf ./auth-service/configs -log.level=debug
+```
+
+#### Port Conflicts
+
+If you encounter port conflicts:
+
+```bash
+# Check what's using the ports
+lsof -i :8080  # Auth Service
+lsof -i :8001  # Message Service
+lsof -i :8002  # Presence Service
+lsof -i :8003  # Chat API
+lsof -i :8004  # Media Service
+
+# Kill processes using ports
+sudo kill -9 $(lsof -t -i:8080)
+```
+
+### Performance Issues
+
+#### Database Performance
+
+```bash
+# Check PostgreSQL performance
+docker exec orbit-postgres psql -U chat_user -d chat_db -c "
+SELECT schemaname,tablename,attname,n_distinct,correlation 
+FROM pg_stats 
+WHERE schemaname = 'public' 
+ORDER BY n_distinct DESC;"
+
+# Check slow queries
+docker exec orbit-postgres psql -U chat_user -d chat_db -c "
+SELECT query, mean_time, calls 
+FROM pg_stat_statements 
+ORDER BY mean_time DESC 
+LIMIT 10;"
+```
+
+#### Redis Performance
+
+```bash
+# Check Redis memory usage
+docker exec orbit-redis redis-cli info memory
+
+# Check Redis performance
+docker exec orbit-redis redis-cli --latency
+```
+
+### Log Analysis
+
+#### Service Logs Location
+
+```bash
 # View service logs
+tail -f logs/auth-service.log
+tail -f logs/message-service.log
+tail -f logs/chat-api.log
+tail -f logs/presence-service.log
+tail -f logs/media-service.log
+
+# Search logs for errors
+grep -i error logs/*.log
+grep -i "panic\|fatal" logs/*.log
+```
+
+#### Docker Logs
+
+```bash
+# Follow all logs
+docker-compose logs -f
+
+# Follow specific service logs
 docker-compose logs -f auth-service
 
-# Test database connection
-docker exec orbit-postgres psql -U chat_user -d chat_db -c "SELECT 1;"
-
-# Test Redis connection
-docker exec orbit-redis redis-cli ping
-
-# Test MQTT connection
-docker exec orbit-emqx emqx_ctl status
+# Show last 100 lines
+docker-compose logs --tail=100 auth-service
 ```
 
 ## 📄 License
 
 This project is licensed under the MIT License.
+
+## 📋 Quick Reference
+
+### Essential Commands
+
+```bash
+# Start everything
+docker-compose up -d
+
+# Stop everything
+docker-compose down
+
+# View logs
+docker-compose logs -f
+
+# Build and run locally
+make generate && make build
+
+# Run tests
+make test
+
+# Check service health
+curl http://localhost:8080/health  # Auth
+curl http://localhost:8001/health  # Message
+curl http://localhost:8002/health  # Presence
+curl http://localhost:8003/health  # Chat API
+curl http://localhost:8004/health  # Media
+```
+
+### Service URLs
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Auth Service | http://localhost:8080 | - |
+| Message Service | http://localhost:8001 | - |
+| Presence Service | http://localhost:8002 | - |
+| Chat API | http://localhost:8003 | - |
+| Media Service | http://localhost:8004 | - |
+| Keycloak Admin | http://localhost:8090 | admin/admin123 |
+| EMQX Dashboard | http://localhost:18083 | admin/public |
+| MinIO Console | http://localhost:9001 | minioadmin/minioadmin123 |
+
+### Database Credentials
+
+```bash
+# PostgreSQL
+Host: localhost:5432
+Database: chat_db
+Username: chat_user
+Password: chat_password
+
+# Redis
+Host: localhost:6379
+Password: (none)
+
+# MQTT (EMQX)
+Host: localhost:1883
+Username: (varies by service)
+Password: (varies by service)
+```
 
 ## 🤝 Contributing
 
