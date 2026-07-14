@@ -223,10 +223,40 @@ services:
       - MQTT_BROKER_URL=tcp://emqx:1883
       - MQTT_USERNAME=chat_api
       - MQTT_PASSWORD=chat_api_password
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - PORT=8003
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  outbox-relay:
+    build:
+      context: .
+      dockerfile: outbox-relay/Dockerfile
+    container_name: orbit-outbox-relay
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://chat_user:chat_password@postgres:5432/chat_db?sslmode=disable
+      - MQTT_BROKER_URL=tcp://emqx:1883
+      - MQTT_USERNAME=outbox_relay
+      - MQTT_PASSWORD=outbox_relay_password
+      - POLL_INTERVAL=500ms
+      - BATCH_SIZE=100
+      - MAX_RETRIES=5
+      - RETRY_BACKOFF=2s
+      - PORT=8005
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -256,6 +286,7 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin123
       - MINIO_BUCKET=chat-attachments
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - PORT=8004
     restart: unless-stopped
     healthcheck:

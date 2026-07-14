@@ -225,18 +225,40 @@ func (r *chatRepo) GetConversationMessages(ctx context.Context, conversationID u
 	return messages, nil
 }
 
-func (r *chatRepo) CreateMessage(ctx context.Context, message *biz.Message) error {
+func (r *chatRepo) CreateMessageWithOutbox(ctx context.Context, message *biz.Message, outbox *biz.OutboxEntry) error {
 	metaJSON, _ := json.Marshal(message.Meta)
 
-	query := `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // no-op if committed
+
+	// 1. Insert message
+	msgQuery := `
 		INSERT INTO messages (id, conversation_id, sender_id, content_type, content, meta, dedupe_key, sent_at, edited_at, deleted)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err = tx.ExecContext(ctx, msgQuery,
 		message.ID, message.ConversationID, message.SenderID, message.ContentType,
 		message.Content, metaJSON, message.DedupeKey, message.SentAt, message.EditedAt, message.Deleted)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// 2. Insert outbox entry
+	outboxQuery := `
+		INSERT INTO message_outbox (message_id, conversation_id, topic, payload, created_at)
+		VALUES ($1, $2, $3, $4, NOW())`
+
+	_, err = tx.ExecContext(ctx, outboxQuery,
+		outbox.MessageID, outbox.ConversationID, outbox.Topic, outbox.Payload)
+	if err != nil {
+		return err
+	}
+
+	// 3. Commit — both writes succeed or neither does
+	return tx.Commit()
 }
 
 func (r *chatRepo) GetMessage(ctx context.Context, messageID uuid.UUID) (*biz.Message, error) {

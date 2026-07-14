@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,17 +12,21 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/chat-api/internal/biz"
+	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/auth"
+	sharedserver "github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/server"
 )
 
 type ChatHTTPServer struct {
-	chatUc *biz.ChatUsecase
-	router *mux.Router
+	chatUc    *biz.ChatUsecase
+	router    *mux.Router
+	jwtSecret string
 }
 
-func NewChatHTTPServer(chatUc *biz.ChatUsecase) *ChatHTTPServer {
+func NewChatHTTPServer(chatUc *biz.ChatUsecase, jwtSecret string) *ChatHTTPServer {
 	s := &ChatHTTPServer{
-		chatUc: chatUc,
-		router: mux.NewRouter(),
+		chatUc:    chatUc,
+		router:    mux.NewRouter(),
+		jwtSecret: jwtSecret,
 	}
 	s.setupRoutes()
 	return s
@@ -49,16 +54,6 @@ func (s *ChatHTTPServer) setupRoutes() {
 }
 
 func (s *ChatHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// CORS headers
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-Organization-ID")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	s.router.ServeHTTP(w, r)
 }
 
@@ -68,7 +63,7 @@ func (s *ChatHTTPServer) handleCreateConversation(w http.ResponseWriter, r *http
 
 	var req biz.CreateConversationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -78,7 +73,7 @@ func (s *ChatHTTPServer) handleCreateConversation(w http.ResponseWriter, r *http
 		return
 	}
 
-	s.writeJSON(w, http.StatusCreated, conversation)
+	sharedserver.WriteJSON(w, http.StatusCreated, conversation)
 }
 
 func (s *ChatHTTPServer) handleGetUserConversations(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +85,7 @@ func (s *ChatHTTPServer) handleGetUserConversations(w http.ResponseWriter, r *ht
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, conversations)
+	sharedserver.WriteJSON(w, http.StatusOK, conversations)
 }
 
 func (s *ChatHTTPServer) handleGetConversation(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +98,7 @@ func (s *ChatHTTPServer) handleGetConversation(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, conversation)
+	sharedserver.WriteJSON(w, http.StatusOK, conversation)
 }
 
 func (s *ChatHTTPServer) handleUpdateConversation(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +107,7 @@ func (s *ChatHTTPServer) handleUpdateConversation(w http.ResponseWriter, r *http
 
 	var req biz.UpdateConversationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -122,7 +117,7 @@ func (s *ChatHTTPServer) handleUpdateConversation(w http.ResponseWriter, r *http
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, conversation)
+	sharedserver.WriteJSON(w, http.StatusOK, conversation)
 }
 
 func (s *ChatHTTPServer) handleGetParticipants(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +130,7 @@ func (s *ChatHTTPServer) handleGetParticipants(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, participants)
+	sharedserver.WriteJSON(w, http.StatusOK, participants)
 }
 
 func (s *ChatHTTPServer) handleAddParticipant(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +139,7 @@ func (s *ChatHTTPServer) handleAddParticipant(w http.ResponseWriter, r *http.Req
 
 	var req biz.AddParticipantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -153,7 +148,7 @@ func (s *ChatHTTPServer) handleAddParticipant(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "added"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "added"})
 }
 
 func (s *ChatHTTPServer) handleRemoveParticipant(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +159,7 @@ func (s *ChatHTTPServer) handleRemoveParticipant(w http.ResponseWriter, r *http.
 	targetUserIDStr := vars["userID"]
 	targetUserID, err := strconv.Atoi(targetUserIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
 
@@ -173,7 +168,7 @@ func (s *ChatHTTPServer) handleRemoveParticipant(w http.ResponseWriter, r *http.
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
 func (s *ChatHTTPServer) handleGetMessages(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +197,7 @@ func (s *ChatHTTPServer) handleGetMessages(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, messages)
+	sharedserver.WriteJSON(w, http.StatusOK, messages)
 }
 
 func (s *ChatHTTPServer) handleSendMessage(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +206,7 @@ func (s *ChatHTTPServer) handleSendMessage(w http.ResponseWriter, r *http.Reques
 
 	var req biz.SendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -223,7 +218,7 @@ func (s *ChatHTTPServer) handleSendMessage(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.writeJSON(w, http.StatusCreated, message)
+	sharedserver.WriteJSON(w, http.StatusCreated, message)
 }
 
 func (s *ChatHTTPServer) handleMarkAsRead(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +230,7 @@ func (s *ChatHTTPServer) handleMarkAsRead(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "marked_as_read"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "marked_as_read"})
 }
 
 func (s *ChatHTTPServer) handleTypingIndicator(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +242,7 @@ func (s *ChatHTTPServer) handleTypingIndicator(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -256,63 +251,49 @@ func (s *ChatHTTPServer) handleTypingIndicator(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 
 // Helper methods
 func (s *ChatHTTPServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// This is a simplified auth middleware
-		// In production, you would validate JWT tokens here
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			s.writeError(w, http.StatusUnauthorized, "Authorization header required")
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Authorization header required")
 			return
 		}
 
-		// Extract token and validate (simplified)
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
-			s.writeError(w, http.StatusUnauthorized, "Invalid authorization format")
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid authorization format")
 			return
 		}
 
-		// TODO: Validate token with auth service
-		// For now, we'll extract user info from headers (for testing)
-		userIDStr := r.Header.Get("X-User-ID")
-		orgIDStr := r.Header.Get("X-Organization-ID")
-
-		if userIDStr == "" || orgIDStr == "" {
-			s.writeError(w, http.StatusUnauthorized, "Missing user or organization ID")
-			return
-		}
-
-		userID, err := strconv.Atoi(userIDStr)
+		claims, err := auth.ValidateToken(tokenString, s.jwtSecret)
 		if err != nil {
-			s.writeError(w, http.StatusUnauthorized, "Invalid user ID")
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid or expired token")
 			return
 		}
 
-		orgID, err := uuid.Parse(orgIDStr)
-		if err != nil {
-			s.writeError(w, http.StatusUnauthorized, "Invalid organization ID")
-			return
-		}
-
-		// Add to context
-		ctx := context.WithValue(r.Context(), "userID", userID)
-		ctx = context.WithValue(ctx, "orgID", orgID)
-
+		ctx := auth.SetClaims(r.Context(), claims)
 		next(w, r.WithContext(ctx))
 	}
 }
 
 func (s *ChatHTTPServer) getUserIDFromContext(ctx context.Context) int {
-	return ctx.Value("userID").(int)
+	id, err := auth.GetUserID(ctx)
+	if err != nil {
+		return 0
+	}
+	return id
 }
 
 func (s *ChatHTTPServer) getOrgIDFromContext(ctx context.Context) uuid.UUID {
-	return ctx.Value("orgID").(uuid.UUID)
+	orgID, err := auth.GetOrgID(ctx)
+	if err != nil {
+		return uuid.Nil
+	}
+	return orgID
 }
 
 func (s *ChatHTTPServer) getConversationIDFromPath(r *http.Request) uuid.UUID {
@@ -323,32 +304,20 @@ func (s *ChatHTTPServer) getConversationIDFromPath(r *http.Request) uuid.UUID {
 }
 
 func (s *ChatHTTPServer) handleError(w http.ResponseWriter, err error) {
-	switch err {
-	case biz.ErrConversationNotFound:
-		s.writeError(w, http.StatusNotFound, "Conversation not found")
-	case biz.ErrNotParticipant:
-		s.writeError(w, http.StatusForbidden, "Not a participant in this conversation")
-	case biz.ErrInsufficientPermissions:
-		s.writeError(w, http.StatusForbidden, "Insufficient permissions")
-	case biz.ErrInvalidRequest:
-		s.writeError(w, http.StatusBadRequest, "Invalid request")
-	case biz.ErrInvalidDMParticipants:
-		s.writeError(w, http.StatusBadRequest, "DM conversations must have exactly 2 participants")
-	case biz.ErrMessageNotFound:
-		s.writeError(w, http.StatusNotFound, "Message not found")
+	switch {
+	case errors.Is(err, biz.ErrConversationNotFound):
+		sharedserver.WriteError(w, http.StatusNotFound, "Conversation not found")
+	case errors.Is(err, biz.ErrNotParticipant):
+		sharedserver.WriteError(w, http.StatusForbidden, "Not a participant in this conversation")
+	case errors.Is(err, biz.ErrInsufficientPermissions):
+		sharedserver.WriteError(w, http.StatusForbidden, "Insufficient permissions")
+	case errors.Is(err, biz.ErrInvalidRequest):
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid request")
+	case errors.Is(err, biz.ErrInvalidDMParticipants):
+		sharedserver.WriteError(w, http.StatusBadRequest, "DM conversations must have exactly 2 participants")
+	case errors.Is(err, biz.ErrMessageNotFound):
+		sharedserver.WriteError(w, http.StatusNotFound, "Message not found")
 	default:
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 	}
-}
-
-func (s *ChatHTTPServer) writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func (s *ChatHTTPServer) writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

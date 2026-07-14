@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/biz"
+	sharedserver "github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/server"
 )
 
 type PresenceHTTPServer struct {
@@ -37,16 +38,6 @@ func (s *PresenceHTTPServer) setupRoutes() {
 }
 
 func (s *PresenceHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// CORS headers
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-Organization-ID")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	s.router.ServeHTTP(w, r)
 }
 
@@ -56,17 +47,17 @@ func (s *PresenceHTTPServer) handleGetUserPresence(w http.ResponseWriter, r *htt
 
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
 
 	presence, err := s.presenceUc.GetUserPresence(r.Context(), userID)
 	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, presence)
+	sharedserver.WriteJSON(w, http.StatusOK, presence)
 }
 
 func (s *PresenceHTTPServer) handleSetUserStatus(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +66,7 @@ func (s *PresenceHTTPServer) handleSetUserStatus(w http.ResponseWriter, r *http.
 
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
 
@@ -85,7 +76,7 @@ func (s *PresenceHTTPServer) handleSetUserStatus(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -106,12 +97,12 @@ func (s *PresenceHTTPServer) handleSetUserStatus(w http.ResponseWriter, r *http.
 	}
 
 	if !isValid {
-		s.writeError(w, http.StatusBadRequest, "Invalid status")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid status")
 		return
 	}
 
 	if err := s.presenceUc.SetUserStatus(r.Context(), userID, req.Status, req.CustomStatus); err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -120,7 +111,7 @@ func (s *PresenceHTTPServer) handleSetUserStatus(w http.ResponseWriter, r *http.
 		s.mqttServer.PublishPresenceUpdate(userID, req.Status, req.CustomStatus)
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 func (s *PresenceHTTPServer) handleGetMultipleUserPresence(w http.ResponseWriter, r *http.Request) {
@@ -129,17 +120,17 @@ func (s *PresenceHTTPServer) handleGetMultipleUserPresence(w http.ResponseWriter
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
 	if len(req.UserIDs) == 0 {
-		s.writeError(w, http.StatusBadRequest, "No user IDs provided")
+		sharedserver.WriteError(w, http.StatusBadRequest, "No user IDs provided")
 		return
 	}
 
 	if len(req.UserIDs) > 100 {
-		s.writeError(w, http.StatusBadRequest, "Too many user IDs (max 100)")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Too many user IDs (max 100)")
 		return
 	}
 
@@ -147,7 +138,7 @@ func (s *PresenceHTTPServer) handleGetMultipleUserPresence(w http.ResponseWriter
 	for i, userIDStr := range req.UserIDs {
 		userID, err := strconv.Atoi(userIDStr)
 		if err != nil {
-			s.writeError(w, http.StatusBadRequest, "Invalid user ID: "+userIDStr)
+			sharedserver.WriteError(w, http.StatusBadRequest, "Invalid user ID: "+userIDStr)
 			return
 		}
 		userIDs[i] = userID
@@ -155,7 +146,7 @@ func (s *PresenceHTTPServer) handleGetMultipleUserPresence(w http.ResponseWriter
 
 	presenceMap, err := s.presenceUc.GetMultipleUserPresence(r.Context(), userIDs)
 	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -165,7 +156,7 @@ func (s *PresenceHTTPServer) handleGetMultipleUserPresence(w http.ResponseWriter
 		response[strconv.Itoa(userID)] = presence
 	}
 
-	s.writeJSON(w, http.StatusOK, response)
+	sharedserver.WriteJSON(w, http.StatusOK, response)
 }
 
 func (s *PresenceHTTPServer) handleGetUserSessions(w http.ResponseWriter, r *http.Request) {
@@ -174,17 +165,17 @@ func (s *PresenceHTTPServer) handleGetUserSessions(w http.ResponseWriter, r *htt
 
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
 
 	sessions, err := s.presenceUc.GetUserDeviceSessions(r.Context(), userID)
 	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, sessions)
+	sharedserver.WriteJSON(w, http.StatusOK, sessions)
 }
 
 func (s *PresenceHTTPServer) handleClientConnect(w http.ResponseWriter, r *http.Request) {
@@ -197,12 +188,12 @@ func (s *PresenceHTTPServer) handleClientConnect(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
 	if req.ClientID == "" || req.UserID == 0 {
-		s.writeError(w, http.StatusBadRequest, "client_id and user_id are required")
+		sharedserver.WriteError(w, http.StatusBadRequest, "client_id and user_id are required")
 		return
 	}
 
@@ -213,7 +204,7 @@ func (s *PresenceHTTPServer) handleClientConnect(w http.ResponseWriter, r *http.
 
 	// Handle client connection
 	if err := s.presenceUc.HandleClientConnected(r.Context(), req.ClientID, req.UserID, req.DeviceInfo, req.IPAddress); err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -222,17 +213,5 @@ func (s *PresenceHTTPServer) handleClientConnect(w http.ResponseWriter, r *http.
 		s.mqttServer.PublishPresenceUpdate(req.UserID, biz.StatusOnline, "Available")
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "connected"})
-}
-
-func (s *PresenceHTTPServer) writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func (s *PresenceHTTPServer) writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "connected"})
 }

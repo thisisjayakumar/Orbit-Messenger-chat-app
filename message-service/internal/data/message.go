@@ -19,21 +19,6 @@ func NewMessageRepo(db *sql.DB) biz.MessageRepo {
 	return &messageRepo{db: db}
 }
 
-func (r *messageRepo) CreateMessage(ctx context.Context, message *biz.Message) error {
-	metaJSON, _ := json.Marshal(message.Meta)
-
-	query := `
-		INSERT INTO messages (id, conversation_id, sender_id, content_type, content, meta, dedupe_key, sent_at, deleted)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (conversation_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`
-
-	_, err := r.db.ExecContext(ctx, query,
-		message.ID, message.ConversationID, message.SenderID, message.ContentType,
-		message.Content, metaJSON, message.DedupeKey, message.SentAt, message.Deleted)
-
-	return err
-}
-
 func (r *messageRepo) GetMessage(ctx context.Context, id uuid.UUID) (*biz.Message, error) {
 	message := &biz.Message{}
 	var metaJSON []byte
@@ -156,7 +141,7 @@ func (r *messageRepo) CreateAttachment(ctx context.Context, attachment *biz.Atta
 		VALUES ($1, $2, $3, $4, $5, $6)`
 
 	_, err := r.db.ExecContext(ctx, query,
-		attachment.ID, attachment.MessageID, attachment.ObjectKey, 
+		attachment.ID, attachment.MessageID, attachment.ObjectKey,
 		attachment.MimeType, attachment.Size, metaJSON)
 
 	return err

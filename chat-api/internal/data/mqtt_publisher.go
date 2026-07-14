@@ -41,19 +41,6 @@ func NewMQTTPublisher(config MQTTConfig) (biz.MQTTPublisher, error) {
 	return &mqttPublisher{client: client}, nil
 }
 
-func (p *mqttPublisher) PublishMessage(ctx context.Context, conversationID uuid.UUID, message *biz.Message) error {
-	topic := fmt.Sprintf("chat/%s/messages", conversationID.String())
-
-	payload, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-
-	token := p.client.Publish(topic, 1, false, payload)
-	token.Wait()
-	return token.Error()
-}
-
 func (p *mqttPublisher) PublishTypingIndicator(ctx context.Context, conversationID uuid.UUID, userID int, isTyping bool) error {
 	topic := fmt.Sprintf("chat/%s/typing", conversationID.String())
 

@@ -15,11 +15,11 @@ import (
 type FileStatus string
 
 const (
-	FileStatusUploading FileStatus = "uploading"
-	FileStatusScanning  FileStatus = "scanning"
-	FileStatusReady     FileStatus = "ready"
+	FileStatusUploading  FileStatus = "uploading"
+	FileStatusScanning   FileStatus = "scanning"
+	FileStatusReady      FileStatus = "ready"
 	FileStatusQuarantine FileStatus = "quarantine"
-	FileStatusError     FileStatus = "error"
+	FileStatusError      FileStatus = "error"
 )
 
 type Attachment struct {
@@ -36,9 +36,9 @@ type Attachment struct {
 }
 
 type UploadRequest struct {
-	FileName    string `json:"file_name" validate:"required"`
-	ContentType string `json:"content_type" validate:"required"`
-	Size        int64  `json:"size" validate:"required"`
+	FileName    string     `json:"file_name" validate:"required"`
+	ContentType string     `json:"content_type" validate:"required"`
+	Size        int64      `json:"size" validate:"required"`
 	MessageID   *uuid.UUID `json:"message_id,omitempty"`
 }
 
@@ -74,21 +74,21 @@ type AntivirusScanner interface {
 }
 
 type MediaUsecase struct {
-	repo            MediaRepo
-	storage         StorageProvider
-	antivirus       AntivirusScanner
-	maxFileSize     int64
-	allowedTypes    []string
+	repo             MediaRepo
+	storage          StorageProvider
+	antivirus        AntivirusScanner
+	maxFileSize      int64
+	allowedTypes     []string
 	antivirusEnabled bool
 }
 
 func NewMediaUsecase(repo MediaRepo, storage StorageProvider, antivirus AntivirusScanner, maxFileSize int64, allowedTypes []string, antivirusEnabled bool) *MediaUsecase {
 	return &MediaUsecase{
-		repo:            repo,
-		storage:         storage,
-		antivirus:       antivirus,
-		maxFileSize:     maxFileSize,
-		allowedTypes:    allowedTypes,
+		repo:             repo,
+		storage:          storage,
+		antivirus:        antivirus,
+		maxFileSize:      maxFileSize,
+		allowedTypes:     allowedTypes,
 		antivirusEnabled: antivirusEnabled,
 	}
 }
@@ -286,18 +286,18 @@ func (uc *MediaUsecase) isAllowedContentType(contentType string) bool {
 func (uc *MediaUsecase) validateFileExtension(fileName, contentType string) bool {
 	ext := strings.ToLower(filepath.Ext(fileName))
 	expectedType := mime.TypeByExtension(ext)
-	
+
 	// Basic validation - in production you might want more sophisticated checks
-	return expectedType == contentType || 
-		   (strings.HasPrefix(contentType, "image/") && strings.HasPrefix(expectedType, "image/")) ||
-		   (strings.HasPrefix(contentType, "application/") && strings.HasPrefix(expectedType, "application/"))
+	return expectedType == contentType ||
+		(strings.HasPrefix(contentType, "image/") && strings.HasPrefix(expectedType, "image/")) ||
+		(strings.HasPrefix(contentType, "application/") && strings.HasPrefix(expectedType, "application/"))
 }
 
 func (uc *MediaUsecase) generateObjectKey(userID uuid.UUID, fileName string) string {
 	timestamp := time.Now().Unix()
 	fileID := uuid.New().String()
 	ext := filepath.Ext(fileName)
-	
+
 	return fmt.Sprintf("attachments/%s/%d_%s%s", userID.String(), timestamp, fileID, ext)
 }
 

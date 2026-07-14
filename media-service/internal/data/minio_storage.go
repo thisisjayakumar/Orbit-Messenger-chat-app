@@ -74,7 +74,7 @@ func (s *minioStorage) GenerateUploadURL(ctx context.Context, objectKey string, 
 func (s *minioStorage) GenerateDownloadURL(ctx context.Context, objectKey string, expiresIn time.Duration) (string, error) {
 	// Set request parameters
 	reqParams := make(url.Values)
-	
+
 	// Generate presigned URL for GET operation
 	presignedURL, err := s.client.PresignedGetObject(ctx, s.bucket, objectKey, expiresIn, reqParams)
 	if err != nil {

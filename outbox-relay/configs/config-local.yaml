@@ -1,0 +1,18 @@
+# Outbox Relay — Local Development Config
+outbox:
+  poll_interval: 500ms
+  batch_size: 10
+  max_retries: 3
+  retry_backoff: 2s
+  max_backoff: 1h
+  pending_age: 1s
+
+mqtt:
+  broker_url: "tcp://localhost:1883"
+  username: "outbox_relay"
+  password: "outbox_relay_password"
+  qos: 1
+
+monitoring:
+  port: 8005
+  health_check: "/health"

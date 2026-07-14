@@ -1,10 +1,6 @@
 package biz
 
-import (
-	"errors"
-	
-	"github.com/google/wire"
-)
+import "errors"
 
 var (
 	ErrAttachmentNotFound = errors.New("attachment not found")
@@ -14,9 +10,6 @@ var (
 	ErrFileNotReady       = errors.New("file not ready")
 	ErrUnauthorized       = errors.New("unauthorized")
 )
-
-// ProviderSet is biz providers.
-var ProviderSet = wire.NewSet(NewMediaUsecaseFromConfig)
 
 // NewMediaUsecaseFromConfig creates media usecase with default config
 func NewMediaUsecaseFromConfig(repo MediaRepo, storage StorageProvider, antivirus AntivirusScanner) *MediaUsecase {

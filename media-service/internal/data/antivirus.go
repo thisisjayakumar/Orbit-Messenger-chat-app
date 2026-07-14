@@ -15,8 +15,8 @@ type clamAVScanner struct {
 }
 
 type AntivirusConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	ClamAVHost  string `yaml:"clamav_host"`
+	Enabled    bool   `yaml:"enabled"`
+	ClamAVHost string `yaml:"clamav_host"`
 }
 
 func NewClamAVScanner(config AntivirusConfig) biz.AntivirusScanner {
@@ -37,7 +37,7 @@ func (s *clamAVScanner) ScanFile(ctx context.Context, objectKey string) (bool, e
 	// 1. Download the file from storage
 	// 2. Send it to ClamAV daemon for scanning
 	// 3. Parse the response
-	
+
 	// For now, we'll just check if ClamAV is reachable
 	conn, err := net.DialTimeout("tcp", s.host, 5*time.Second)
 	if err != nil {
