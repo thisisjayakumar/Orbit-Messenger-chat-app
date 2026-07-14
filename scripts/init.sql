@@ -129,3 +129,41 @@ CREATE TABLE audit_events (
     details JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Transactional outbox for exactly-once MQTT delivery
+CREATE TYPE outbox_status AS ENUM ('pending', 'published', 'failed');
+
+CREATE TABLE message_outbox (
+    id              BIGSERIAL PRIMARY KEY,
+    message_id      UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    conversation_id UUID NOT NULL,
+    topic           TEXT NOT NULL,
+    payload         JSONB NOT NULL,
+    status          outbox_status NOT NULL DEFAULT 'pending',
+    retry_count     INT NOT NULL DEFAULT 0,
+    max_retries     INT NOT NULL DEFAULT 5,
+    last_error      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    published_at    TIMESTAMPTZ,
+    next_retry_at   TIMESTAMPTZ
+);
+
+CREATE INDEX outbox_pending_idx ON message_outbox(status, created_at) 
+    WHERE status = 'pending';
+
+CREATE INDEX outbox_retry_idx ON message_outbox(status, next_retry_at)
+    WHERE status = 'failed' AND retry_count < max_retries;
+
+-- Dead letter table — messages that exhausted all retries
+CREATE TABLE message_outbox_dead_letter (
+    id              BIGSERIAL PRIMARY KEY,
+    message_id      UUID NOT NULL,
+    conversation_id UUID NOT NULL,
+    topic           TEXT NOT NULL,
+    payload         JSONB NOT NULL,
+    retry_count     INT NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    failed_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved        BOOLEAN NOT NULL DEFAULT FALSE
+);

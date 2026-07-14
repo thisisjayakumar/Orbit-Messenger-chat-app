@@ -9,7 +9,6 @@ require (
 	github.com/go-kratos/kratos/v2 v2.7.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.3.1
-	github.com/google/wire v0.7.0
 	github.com/gorilla/mux v1.8.0
 	github.com/lib/pq v1.10.9
 	github.com/minio/minio-go/v7 v7.0.63
@@ -27,6 +26,7 @@ require (
 	github.com/go-resty/resty/v2 v2.7.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

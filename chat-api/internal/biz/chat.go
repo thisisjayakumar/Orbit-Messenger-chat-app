@@ -2,6 +2,8 @@ package biz
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -97,13 +99,19 @@ type ChatRepo interface {
 	UpdateLastReadAt(ctx context.Context, conversationID uuid.UUID, userID int) error
 
 	// Messages
-	CreateMessage(ctx context.Context, message *Message) error
+	CreateMessageWithOutbox(ctx context.Context, message *Message, outbox *OutboxEntry) error
 	GetConversationMessages(ctx context.Context, conversationID uuid.UUID, limit, offset int) ([]*Message, error)
 	GetMessage(ctx context.Context, messageID uuid.UUID) (*Message, error)
 }
 
+type OutboxEntry struct {
+	MessageID      uuid.UUID       `json:"message_id"`
+	ConversationID uuid.UUID       `json:"conversation_id"`
+	Topic          string          `json:"topic"`
+	Payload        json.RawMessage `json:"payload"`
+}
+
 type MQTTPublisher interface {
-	PublishMessage(ctx context.Context, conversationID uuid.UUID, message *Message) error
 	PublishTypingIndicator(ctx context.Context, conversationID uuid.UUID, userID int, isTyping bool) error
 }
 
@@ -188,7 +196,7 @@ func (uc *ChatUsecase) GetConversation(ctx context.Context, conversationID uuid.
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
-		return nil, ErrNotParticipant
+		return nil, err
 	}
 	if participant == nil {
 		return nil, ErrNotParticipant
@@ -201,7 +209,7 @@ func (uc *ChatUsecase) SendMessage(ctx context.Context, req *SendMessageRequest,
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, req.ConversationID, senderID)
 	if err != nil {
-		return nil, ErrNotParticipant
+		return nil, err
 	}
 	if participant == nil {
 		return nil, ErrNotParticipant
@@ -220,26 +228,37 @@ func (uc *ChatUsecase) SendMessage(ctx context.Context, req *SendMessageRequest,
 		Deleted:        false,
 	}
 
-	// Save message to database first
-	if err := uc.repo.CreateMessage(ctx, message); err != nil {
+	// Phase C: Write via transactional outbox (message + outbox in one PG transaction).
+	// MQTT publish is handled by the Outbox Relay service.
+	outbox := uc.buildOutboxEntry(message)
+	if err := uc.repo.CreateMessageWithOutbox(ctx, message, outbox); err != nil {
 		return nil, err
 	}
 
-	// Publish to MQTT for real-time delivery
-	if err := uc.publisher.PublishMessage(ctx, req.ConversationID, message); err != nil {
-		// Log error but don't fail the request since message is already saved
-		// In production, you might want to implement a retry mechanism
-		// For now, just log the error
+	return message, nil
+}
+
+// buildOutboxEntry creates an outbox entry from a message for reliable MQTT delivery.
+func (uc *ChatUsecase) buildOutboxEntry(message *Message) *OutboxEntry {
+	payload, err := json.Marshal(message)
+	if err != nil {
+		// Marshalling a well-known struct should never fail
+		payload = []byte{}
 	}
 
-	return message, nil
+	return &OutboxEntry{
+		MessageID:      message.ID,
+		ConversationID: message.ConversationID,
+		Topic:          fmt.Sprintf("chat/%s/messages", message.ConversationID.String()),
+		Payload:        payload,
+	}
 }
 
 func (uc *ChatUsecase) GetConversationMessages(ctx context.Context, conversationID uuid.UUID, userID int, limit, offset int) ([]*Message, error) {
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
-		return nil, ErrNotParticipant
+		return nil, err
 	}
 	if participant == nil {
 		return nil, ErrNotParticipant
@@ -252,7 +271,7 @@ func (uc *ChatUsecase) AddParticipant(ctx context.Context, conversationID uuid.U
 	// Check if requester is admin
 	requesterParticipant, err := uc.repo.GetParticipant(ctx, conversationID, requesterID)
 	if err != nil {
-		return ErrNotParticipant
+		return err
 	}
 	if requesterParticipant == nil || requesterParticipant.Role != ParticipantRoleAdmin {
 		return ErrInsufficientPermissions
@@ -278,7 +297,7 @@ func (uc *ChatUsecase) RemoveParticipant(ctx context.Context, conversationID uui
 	// Check if requester is admin or removing themselves
 	requesterParticipant, err := uc.repo.GetParticipant(ctx, conversationID, requesterID)
 	if err != nil {
-		return ErrNotParticipant
+		return err
 	}
 	if requesterParticipant == nil {
 		return ErrNotParticipant
@@ -295,7 +314,7 @@ func (uc *ChatUsecase) UpdateConversation(ctx context.Context, conversationID uu
 	// Check if requester is admin
 	requesterParticipant, err := uc.repo.GetParticipant(ctx, conversationID, requesterID)
 	if err != nil {
-		return nil, ErrNotParticipant
+		return nil, err
 	}
 	if requesterParticipant == nil || requesterParticipant.Role != ParticipantRoleAdmin {
 		return nil, ErrInsufficientPermissions
@@ -321,7 +340,7 @@ func (uc *ChatUsecase) MarkAsRead(ctx context.Context, conversationID uuid.UUID,
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
-		return ErrNotParticipant
+		return err
 	}
 	if participant == nil {
 		return ErrNotParticipant
@@ -334,7 +353,7 @@ func (uc *ChatUsecase) SendTypingIndicator(ctx context.Context, conversationID u
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
-		return ErrNotParticipant
+		return err
 	}
 	if participant == nil {
 		return ErrNotParticipant
@@ -347,7 +366,7 @@ func (uc *ChatUsecase) GetConversationParticipants(ctx context.Context, conversa
 	// Check if user is participant
 	participant, err := uc.repo.GetParticipant(ctx, conversationID, userID)
 	if err != nil {
-		return nil, ErrNotParticipant
+		return nil, err
 	}
 	if participant == nil {
 		return nil, ErrNotParticipant

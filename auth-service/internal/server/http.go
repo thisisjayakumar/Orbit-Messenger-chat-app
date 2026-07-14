@@ -1,8 +1,8 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +11,8 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/auth-service/internal/biz"
+	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/auth"
+	sharedserver "github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/server"
 )
 
 type HTTPServer struct {
@@ -53,33 +55,23 @@ func (s *HTTPServer) setupRoutes() {
 }
 
 func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// CORS headers
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-Organization-ID")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	s.router.ServeHTTP(w, r)
 }
 
 func (s *HTTPServer) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req biz.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
 	user, token, err := s.authUc.Register(r.Context(), &req)
 	if err != nil {
-		if err == biz.ErrUserExists {
-			s.writeError(w, http.StatusConflict, "User already exists")
+		if errors.Is(err, biz.ErrUserExists) {
+			sharedserver.WriteError(w, http.StatusConflict, "User already exists")
 			return
 		}
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -87,13 +79,13 @@ func (s *HTTPServer) handleRegister(w http.ResponseWriter, r *http.Request) {
 		"user":  user,
 		"token": token,
 	}
-	s.writeJSON(w, http.StatusCreated, response)
+	sharedserver.WriteJSON(w, http.StatusCreated, response)
 }
 
 func (s *HTTPServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req biz.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -108,18 +100,18 @@ func (s *HTTPServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 		var err error
 		orgID, err = uuid.Parse(orgIDStr)
 		if err != nil {
-			s.writeError(w, http.StatusBadRequest, "Invalid organization ID")
+			sharedserver.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 			return
 		}
 	}
 
 	user, token, err := s.authUc.Login(r.Context(), &req, orgID)
 	if err != nil {
-		if err == biz.ErrUserNotFound || err == biz.ErrInvalidPassword {
-			s.writeError(w, http.StatusUnauthorized, "Invalid credentials")
+		if errors.Is(err, biz.ErrUserNotFound) || errors.Is(err, biz.ErrInvalidPassword) {
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid credentials")
 			return
 		}
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -127,7 +119,7 @@ func (s *HTTPServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"user":  user,
 		"token": token,
 	}
-	s.writeJSON(w, http.StatusOK, response)
+	sharedserver.WriteJSON(w, http.StatusOK, response)
 }
 
 func (s *HTTPServer) handleValidateToken(w http.ResponseWriter, r *http.Request) {
@@ -135,36 +127,43 @@ func (s *HTTPServer) handleValidateToken(w http.ResponseWriter, r *http.Request)
 		Token string `json:"token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
 	claims, err := s.authUc.ValidateToken(r.Context(), req.Token)
 	if err != nil {
-		s.writeError(w, http.StatusUnauthorized, "Invalid token")
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token")
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, claims)
+	sharedserver.WriteJSON(w, http.StatusOK, claims)
 }
 
 func (s *HTTPServer) handleGetMe(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	userID := claims.UserID
-
-	user, err := s.authUc.GetUser(r.Context(), userID)
+	userID, err := auth.GetUserID(r.Context())
 	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token claims")
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, user)
+	user, err := s.authUc.GetUser(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, biz.ErrUserNotFound) {
+			sharedserver.WriteError(w, http.StatusNotFound, "User not found")
+			return
+		}
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	sharedserver.WriteJSON(w, http.StatusOK, user)
 }
 
 func (s *HTTPServer) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	var req biz.OIDCLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -174,19 +173,19 @@ func (s *HTTPServer) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		orgIDStr = r.URL.Query().Get("org_id")
 	}
 	if orgIDStr == "" {
-		s.writeError(w, http.StatusBadRequest, "Organization ID is required")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Organization ID is required")
 		return
 	}
 
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid organization ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	user, token, err := s.authUc.OIDCLogin(r.Context(), &req, orgID)
 	if err != nil {
-		s.writeError(w, http.StatusUnauthorized, "OIDC authentication failed")
+		sharedserver.WriteError(w, http.StatusUnauthorized, "OIDC authentication failed")
 		return
 	}
 
@@ -194,16 +193,19 @@ func (s *HTTPServer) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		"user":  user,
 		"token": token,
 	}
-	s.writeJSON(w, http.StatusOK, response)
+	sharedserver.WriteJSON(w, http.StatusOK, response)
 }
 
 func (s *HTTPServer) handleMQTTCredentials(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	userID := claims.UserID
+	userID, err := auth.GetUserID(r.Context())
+	if err != nil {
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token claims")
+		return
+	}
 
 	username, password, err := s.authUc.GenerateMQTTCredentials(r.Context(), userID)
 	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -211,165 +213,185 @@ func (s *HTTPServer) handleMQTTCredentials(w http.ResponseWriter, r *http.Reques
 		"username": username,
 		"password": password,
 	}
-	s.writeJSON(w, http.StatusOK, response)
+	sharedserver.WriteJSON(w, http.StatusOK, response)
 }
 
 func (s *HTTPServer) handleGetOrganizationUsers(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	orgID, _ := uuid.Parse(claims.OrganizationID)
-
-	users, err := s.authUc.GetOrganizationUsers(r.Context(), orgID)
+	orgID, err := auth.GetOrgID(r.Context())
 	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token claims")
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, users)
+	users, err := s.authUc.GetOrganizationUsers(r.Context(), orgID)
+	if err != nil {
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	sharedserver.WriteJSON(w, http.StatusOK, users)
 }
 
 func (s *HTTPServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			s.writeError(w, http.StatusUnauthorized, "Authorization header required")
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Authorization header required")
 			return
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
-			s.writeError(w, http.StatusUnauthorized, "Invalid authorization format")
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid authorization format")
 			return
 		}
 
-		claims, err := s.authUc.ValidateToken(r.Context(), tokenString)
+		bizClaims, err := s.authUc.ValidateToken(r.Context(), tokenString)
 		if err != nil {
-			s.writeError(w, http.StatusUnauthorized, "Invalid token")
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token")
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "claims", claims)
+		// Convert biz.JWTClaims to shared auth.JWTClaims for consistent context management
+		claims := &auth.JWTClaims{
+			UserID:           bizClaims.UserID,
+			OrganizationID:   bizClaims.OrganizationID,
+			Email:            bizClaims.Email,
+			Role:             bizClaims.Role,
+			KeycloakID:       bizClaims.KeycloakID,
+			RegisteredClaims: bizClaims.RegisteredClaims,
+		}
+		ctx := auth.SetClaims(r.Context(), claims)
 		next(w, r.WithContext(ctx))
 	}
 }
 
-func (s *HTTPServer) writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func (s *HTTPServer) writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
-}
-
 // handleGetUser gets a specific user by ID
 func (s *HTTPServer) handleGetUser(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	requesterID := claims.UserID
+	requesterID, err := auth.GetUserID(r.Context())
+	if err != nil {
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token claims")
+		return
+	}
 
 	vars := mux.Vars(r)
 	userID, err := strconv.Atoi(vars["id"])
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
 
 	user, err := s.authUc.GetUser(r.Context(), userID)
 	if err != nil {
-		s.writeError(w, http.StatusNotFound, "User not found")
+		if errors.Is(err, biz.ErrUserNotFound) {
+			sharedserver.WriteError(w, http.StatusNotFound, "User not found")
+			return
+		}
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Check if requester can view this user (same organization)
 	requester, err := s.authUc.GetUser(r.Context(), requesterID)
 	if err != nil {
-		s.writeError(w, http.StatusUnauthorized, "Unauthorized")
+		if errors.Is(err, biz.ErrUserNotFound) {
+			sharedserver.WriteError(w, http.StatusForbidden, "Requester account not found")
+			return
+		}
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	if user.OrganizationID != requester.OrganizationID {
-		s.writeError(w, http.StatusForbidden, "Cannot view users from other organizations")
+		sharedserver.WriteError(w, http.StatusForbidden, "Cannot view users from other organizations")
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, user)
+	sharedserver.WriteJSON(w, http.StatusOK, user)
 }
 
 // handleUpdateUser updates a user
 func (s *HTTPServer) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	requesterID := claims.UserID
+	requesterID, err := auth.GetUserID(r.Context())
+	if err != nil {
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token claims")
+		return
+	}
 
 	vars := mux.Vars(r)
 	targetUserID, err := strconv.Atoi(vars["id"])
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
 
 	var req biz.UpdateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
 	if err := s.authUc.UpdateUser(r.Context(), requesterID, targetUserID, &req); err != nil {
-		if err.Error() == "insufficient permissions" {
-			s.writeError(w, http.StatusForbidden, "Insufficient permissions")
+		if errors.Is(err, biz.ErrInsufficientPermissions) {
+			sharedserver.WriteError(w, http.StatusForbidden, "Insufficient permissions")
 			return
 		}
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Return updated user
 	user, err := s.authUc.GetUser(r.Context(), targetUserID)
 	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "Failed to get updated user")
+		sharedserver.WriteError(w, http.StatusInternalServerError, "Failed to get updated user")
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, user)
+	sharedserver.WriteJSON(w, http.StatusOK, user)
 }
 
 // handleDeleteUser deletes a user (admin only)
 func (s *HTTPServer) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	requesterID := claims.UserID
+	requesterID, err := auth.GetUserID(r.Context())
+	if err != nil {
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token claims")
+		return
+	}
 
 	vars := mux.Vars(r)
 	targetUserID, err := strconv.Atoi(vars["id"])
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid user ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
 
 	if err := s.authUc.DeleteUser(r.Context(), requesterID, targetUserID); err != nil {
-		if err.Error() == "insufficient permissions" {
-			s.writeError(w, http.StatusForbidden, "Insufficient permissions")
+		if errors.Is(err, biz.ErrInsufficientPermissions) {
+			sharedserver.WriteError(w, http.StatusForbidden, "Insufficient permissions")
 			return
 		}
-		if err.Error() == "cannot delete yourself" {
-			s.writeError(w, http.StatusBadRequest, "Cannot delete yourself")
+		if errors.Is(err, biz.ErrCannotDeleteSelf) {
+			sharedserver.WriteError(w, http.StatusBadRequest, "Cannot delete yourself")
 			return
 		}
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"message": "User deleted successfully"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"message": "User deleted successfully"})
 }
 
 // handleSearchUsers searches for users by username or display name
 func (s *HTTPServer) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	requesterID := claims.UserID
+	requesterID, err := auth.GetUserID(r.Context())
+	if err != nil {
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token claims")
+		return
+	}
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		s.writeError(w, http.StatusBadRequest, "Query parameter 'q' is required")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Query parameter 'q' is required")
 		return
 	}
 
@@ -386,17 +408,20 @@ func (s *HTTPServer) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 
 	users, err := s.authUc.SearchUsersByUsername(r.Context(), query, requesterID, limit)
 	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, users)
+	sharedserver.WriteJSON(w, http.StatusOK, users)
 }
 
 // handleGetUserByUsername gets a user by their username
 func (s *HTTPServer) handleGetUserByUsername(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value("claims").(*biz.JWTClaims)
-	requesterID := claims.UserID
+	requesterID, err := auth.GetUserID(r.Context())
+	if err != nil {
+		sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid token claims")
+		return
+	}
 
 	vars := mux.Vars(r)
 	username := vars["username"]
@@ -406,13 +431,13 @@ func (s *HTTPServer) handleGetUserByUsername(w http.ResponseWriter, r *http.Requ
 
 	user, err := s.authUc.GetUserByUsername(r.Context(), username, requesterID)
 	if err != nil {
-		if err == biz.ErrUserNotFound {
-			s.writeError(w, http.StatusNotFound, "User not found")
+		if errors.Is(err, biz.ErrUserNotFound) {
+			sharedserver.WriteError(w, http.StatusNotFound, "User not found")
 			return
 		}
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, user)
+	sharedserver.WriteJSON(w, http.StatusOK, user)
 }

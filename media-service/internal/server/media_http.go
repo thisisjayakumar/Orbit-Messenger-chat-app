@@ -3,31 +3,30 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/media-service/internal/biz"
+	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/auth"
+	sharedserver "github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/server"
 )
 
-// Context key type for avoiding collisions
-type contextKey string
-
-const userIDKey contextKey = "userID"
-
 type MediaHTTPServer struct {
-	mediaUc *biz.MediaUsecase
-	router  *mux.Router
+	mediaUc   *biz.MediaUsecase
+	router    *mux.Router
+	jwtSecret string
 }
 
-func NewMediaHTTPServer(mediaUc *biz.MediaUsecase) *MediaHTTPServer {
+func NewMediaHTTPServer(mediaUc *biz.MediaUsecase, jwtSecret string) *MediaHTTPServer {
 	s := &MediaHTTPServer{
-		mediaUc: mediaUc,
-		router:  mux.NewRouter(),
+		mediaUc:   mediaUc,
+		router:    mux.NewRouter(),
+		jwtSecret: jwtSecret,
 	}
 	s.setupRoutes()
 	return s
@@ -54,16 +53,6 @@ func (s *MediaHTTPServer) setupRoutes() {
 }
 
 func (s *MediaHTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// CORS headers
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID, X-Organization-ID")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	s.router.ServeHTTP(w, r)
 }
 
@@ -72,7 +61,7 @@ func (s *MediaHTTPServer) handleInitiateUpload(w http.ResponseWriter, r *http.Re
 
 	var req biz.UploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -82,7 +71,7 @@ func (s *MediaHTTPServer) handleInitiateUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, response)
+	sharedserver.WriteJSON(w, http.StatusOK, response)
 }
 
 func (s *MediaHTTPServer) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +80,7 @@ func (s *MediaHTTPServer) handleCompleteUpload(w http.ResponseWriter, r *http.Re
 
 	attachmentID, err := uuid.Parse(attachmentIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid attachment ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid attachment ID")
 		return
 	}
 
@@ -100,7 +89,7 @@ func (s *MediaHTTPServer) handleCompleteUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "completed"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "completed"})
 }
 
 func (s *MediaHTTPServer) handleGetAttachment(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +98,7 @@ func (s *MediaHTTPServer) handleGetAttachment(w http.ResponseWriter, r *http.Req
 
 	attachmentID, err := uuid.Parse(attachmentIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid attachment ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid attachment ID")
 		return
 	}
 
@@ -119,7 +108,7 @@ func (s *MediaHTTPServer) handleGetAttachment(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, attachment)
+	sharedserver.WriteJSON(w, http.StatusOK, attachment)
 }
 
 func (s *MediaHTTPServer) handleGetDownloadURL(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +118,7 @@ func (s *MediaHTTPServer) handleGetDownloadURL(w http.ResponseWriter, r *http.Re
 
 	attachmentID, err := uuid.Parse(attachmentIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid attachment ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid attachment ID")
 		return
 	}
 
@@ -139,7 +128,7 @@ func (s *MediaHTTPServer) handleGetDownloadURL(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, response)
+	sharedserver.WriteJSON(w, http.StatusOK, response)
 }
 
 func (s *MediaHTTPServer) handleDeleteAttachment(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +138,7 @@ func (s *MediaHTTPServer) handleDeleteAttachment(w http.ResponseWriter, r *http.
 
 	attachmentID, err := uuid.Parse(attachmentIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid attachment ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid attachment ID")
 		return
 	}
 
@@ -158,7 +147,7 @@ func (s *MediaHTTPServer) handleDeleteAttachment(w http.ResponseWriter, r *http.
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func (s *MediaHTTPServer) handleAssociateWithMessage(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +156,7 @@ func (s *MediaHTTPServer) handleAssociateWithMessage(w http.ResponseWriter, r *h
 
 	attachmentID, err := uuid.Parse(attachmentIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid attachment ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid attachment ID")
 		return
 	}
 
@@ -176,7 +165,7 @@ func (s *MediaHTTPServer) handleAssociateWithMessage(w http.ResponseWriter, r *h
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -185,7 +174,7 @@ func (s *MediaHTTPServer) handleAssociateWithMessage(w http.ResponseWriter, r *h
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "associated"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "associated"})
 }
 
 func (s *MediaHTTPServer) handleGetMessageAttachments(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +183,7 @@ func (s *MediaHTTPServer) handleGetMessageAttachments(w http.ResponseWriter, r *
 
 	messageID, err := uuid.Parse(messageIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid message ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid message ID")
 		return
 	}
 
@@ -204,7 +193,7 @@ func (s *MediaHTTPServer) handleGetMessageAttachments(w http.ResponseWriter, r *
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, attachments)
+	sharedserver.WriteJSON(w, http.StatusOK, attachments)
 }
 
 func (s *MediaHTTPServer) handleGenerateThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +202,7 @@ func (s *MediaHTTPServer) handleGenerateThumbnail(w http.ResponseWriter, r *http
 
 	attachmentID, err := uuid.Parse(attachmentIDStr)
 	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "Invalid attachment ID")
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid attachment ID")
 		return
 	}
 
@@ -222,93 +211,61 @@ func (s *MediaHTTPServer) handleGenerateThumbnail(w http.ResponseWriter, r *http
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "thumbnail_generated"})
+	sharedserver.WriteJSON(w, http.StatusOK, map[string]string{"status": "thumbnail_generated"})
 }
 
 // Helper methods
 func (s *MediaHTTPServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// This is a simplified auth middleware
-		// In production, you would validate JWT tokens here
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			s.writeError(w, http.StatusUnauthorized, "Authorization header required")
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Authorization header required")
 			return
 		}
 
-		// Extract token and validate (simplified)
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
-			s.writeError(w, http.StatusUnauthorized, "Invalid authorization format")
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid authorization format")
 			return
 		}
 
-		// TODO: Validate token with auth service
-		// For now, we'll extract user info from headers (for testing)
-		userIDStr := r.Header.Get("X-User-ID")
-
-		if userIDStr == "" {
-			s.writeError(w, http.StatusUnauthorized, "Missing user ID")
-			return
-		}
-
-		// Try to parse as UUID first, if that fails, try as integer and convert
-		var userID uuid.UUID
-		var err error
-
-		userID, err = uuid.Parse(userIDStr)
+		claims, err := auth.ValidateToken(tokenString, s.jwtSecret)
 		if err != nil {
-			// If UUID parsing fails, try parsing as integer and create a deterministic UUID
-			// This handles cases where user ID comes as integer from frontend
-			if intID, intErr := strconv.Atoi(userIDStr); intErr == nil {
-				// Create a deterministic UUID from integer ID
-				// Using a namespace UUID to ensure consistency
-				namespace := uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8") // Standard namespace UUID
-				userID = uuid.NewSHA1(namespace, []byte(fmt.Sprintf("user_%d", intID)))
-			} else {
-				s.writeError(w, http.StatusUnauthorized, "Invalid user ID format")
-				return
-			}
+			sharedserver.WriteError(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
 		}
 
-		// Add to context
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
-
+		ctx := auth.SetClaims(r.Context(), claims)
 		next(w, r.WithContext(ctx))
 	}
 }
 
 func (s *MediaHTTPServer) getUserIDFromContext(ctx context.Context) uuid.UUID {
-	return ctx.Value(userIDKey).(uuid.UUID)
+	id, err := auth.GetUserID(ctx)
+	if err != nil {
+		return uuid.Nil
+	}
+	// Convert int user ID to deterministic UUID for media service compatibility
+	// (the media service stores user IDs as UUIDs, consistent with the DB schema)
+	namespace := uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+	return uuid.NewSHA1(namespace, []byte(fmt.Sprintf("user_%d", id)))
 }
 
 func (s *MediaHTTPServer) handleError(w http.ResponseWriter, err error) {
-	switch err {
-	case biz.ErrAttachmentNotFound:
-		s.writeError(w, http.StatusNotFound, "Attachment not found")
-	case biz.ErrFileTooLarge:
-		s.writeError(w, http.StatusBadRequest, "File too large")
-	case biz.ErrInvalidFileType:
-		s.writeError(w, http.StatusBadRequest, "Invalid file type")
-	case biz.ErrInvalidFileStatus:
-		s.writeError(w, http.StatusBadRequest, "Invalid file status")
-	case biz.ErrFileNotReady:
-		s.writeError(w, http.StatusConflict, "File not ready for download")
-	case biz.ErrUnauthorized:
-		s.writeError(w, http.StatusForbidden, "Unauthorized")
+	switch {
+	case errors.Is(err, biz.ErrAttachmentNotFound):
+		sharedserver.WriteError(w, http.StatusNotFound, "Attachment not found")
+	case errors.Is(err, biz.ErrFileTooLarge):
+		sharedserver.WriteError(w, http.StatusBadRequest, "File too large")
+	case errors.Is(err, biz.ErrInvalidFileType):
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid file type")
+	case errors.Is(err, biz.ErrInvalidFileStatus):
+		sharedserver.WriteError(w, http.StatusBadRequest, "Invalid file status")
+	case errors.Is(err, biz.ErrFileNotReady):
+		sharedserver.WriteError(w, http.StatusConflict, "File not ready for download")
+	case errors.Is(err, biz.ErrUnauthorized):
+		sharedserver.WriteError(w, http.StatusForbidden, "Unauthorized")
 	default:
-		s.writeError(w, http.StatusInternalServerError, err.Error())
+		sharedserver.WriteError(w, http.StatusInternalServerError, err.Error())
 	}
-}
-
-func (s *MediaHTTPServer) writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func (s *MediaHTTPServer) writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

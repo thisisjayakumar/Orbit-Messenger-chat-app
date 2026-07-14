@@ -15,11 +15,12 @@ import (
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/message-service/internal/biz"
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/message-service/internal/data"
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/message-service/internal/server"
+	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/config"
 )
 
 func main() {
 	// Database connection
-	db, err := sql.Open("postgres", getEnv("DATABASE_URL", "postgres://chat_user:chat_password@localhost:5432/chat_db?sslmode=disable"))
+	db, err := sql.Open("postgres", config.GetEnv("DATABASE_URL", "postgres://chat_user:chat_password@localhost:5432/chat_db?sslmode=disable"))
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
@@ -33,9 +34,9 @@ func main() {
 
 	// MQTT server
 	mqttConfig := server.MQTTConfig{
-		BrokerURL: getEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),
-		Username:  getEnv("MQTT_USERNAME", "message_service"),
-		Password:  getEnv("MQTT_PASSWORD", "message_service_password"),
+		BrokerURL: config.GetEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),
+		Username:  config.GetEnv("MQTT_USERNAME", "message_service"),
+		Password:  config.GetEnv("MQTT_PASSWORD", "message_service_password"),
 		Topics:    []string{"chat/+/messages", "chat/+/typing"},
 	}
 	mqttServer := server.NewMQTTServer(mqttConfig, messageUc)
@@ -54,12 +55,12 @@ func main() {
 
 	// Start HTTP server for health checks
 	srv := &http.Server{
-		Addr:    ":" + getEnv("PORT", "8001"),
+		Addr:    ":" + config.GetEnv("PORT", "8001"),
 		Handler: nil,
 	}
 
 	go func() {
-		log.Printf("Message service starting on port %s", getEnv("PORT", "8001"))
+		log.Printf("Message service starting on port %s", config.GetEnv("PORT", "8001"))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("Failed to start server:", err)
 		}
@@ -79,11 +80,4 @@ func main() {
 	}
 
 	log.Println("Server exited")
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,7 +66,6 @@ type TypingIndicator struct {
 }
 
 type MessageRepo interface {
-	CreateMessage(ctx context.Context, message *Message) error
 	GetMessage(ctx context.Context, id uuid.UUID) (*Message, error)
 	GetMessagesByConversation(ctx context.Context, conversationID uuid.UUID, limit int, offset int) ([]*Message, error)
 	UpdateMessage(ctx context.Context, message *Message) error
@@ -94,20 +94,17 @@ func (uc *MessageUsecase) ProcessIncomingMessage(ctx context.Context, payload []
 		return err
 	}
 
-	// Create message with original ID to maintain consistency
-	message := &Message{
-		ID:             incoming.ID,
-		ConversationID: incoming.ConversationID,
-		SenderID:       incoming.SenderID,
-		ContentType:    incoming.ContentType,
-		Content:        incoming.Content,
-		Meta:           incoming.Meta,
-		DedupeKey:      incoming.DedupeKey,
-		SentAt:         incoming.SentAt,
-		Deleted:        incoming.Deleted,
-	}
+	// Phase C: Message Service is consumer-only.
+	// Message is already persisted by Chat API via transactional outbox.
+	// Handle downstream tasks: receipts, push notifications, search indexing.
+	log.Printf("[consumer] Received message %s in conversation %s from sender %s (type=%s)",
+		incoming.ID, incoming.ConversationID, incoming.SenderID, incoming.ContentType)
 
-	return uc.repo.CreateMessage(ctx, message)
+	// TODO: Generate delivery receipts for online users
+	// TODO: Trigger push notifications for offline users
+	// TODO: Index message for search
+
+	return nil
 }
 
 func (uc *MessageUsecase) ProcessTypingIndicator(ctx context.Context, payload []byte) error {

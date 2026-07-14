@@ -3,7 +3,7 @@ GOPATH:=$(shell go env GOPATH)
 VERSION=$(shell git describe --tags --always)
 
 # Define all services
-SERVICES := auth-service message-service chat-api presence-service media-service
+SERVICES := auth-service message-service chat-api presence-service media-service outbox-relay
 
 # Proto file detection
 ifeq ($(GOHOSTOS), windows)
@@ -22,7 +22,6 @@ init:
 	go install github.com/go-kratos/kratos/cmd/kratos/v2@latest
 	go install github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@latest
 	go install github.com/google/gnostic/cmd/protoc-gen-openapi@latest
-	go install github.com/google/wire/cmd/wire@latest
 	@echo "✅ Tools installed successfully!"
 
 .PHONY: generate-shared-proto
@@ -54,24 +53,9 @@ generate-service-protos:
 	done
 	@echo "✅ Service proto files generated!"
 
-.PHONY: wire
-# generate wire files for all services
-wire:
-	@echo "🔌 Generating wire dependency injection..."
-	@for service in $(SERVICES); do \
-		if [ -d $$service/cmd/$$service ]; then \
-			echo "Generating wire for $$service..."; \
-			cd $$service/cmd/$$service && wire || echo "Warning: Wire failed for $$service"; \
-			cd - > /dev/null; \
-		else \
-			echo "Warning: $$service/cmd/$$service directory not found"; \
-		fi \
-	done
-	@echo "✅ Wire files generated!"
-
 .PHONY: generate
-# generate all code (proto + wire)
-generate: generate-shared-proto generate-service-protos wire
+# generate all code
+generate: generate-shared-proto generate-service-protos
 	@echo "🚀 Running go generate..."
 	go generate ./...
 	go mod tidy
@@ -102,16 +86,79 @@ run-%:
 	go run ./$*/cmd/$* -conf ./$*/configs
 
 .PHONY: test
-# run tests for all services
+# run all tests with verbose output
 test:
-	@echo "🧪 Running tests..."
-	go test -v ./...
+	@echo "🧪 Running all tests..."
+	go test -v -count=1 ./...
+
+.PHONY: test-short
+# run all tests with short mode (skips slow tests)
+test-short:
+	@echo "🧪 Running all tests (short mode)..."
+	go test -v -short -count=1 ./...
+
+.PHONY: test-race
+# run all tests with race detector
+test-race:
+	@echo "🧪 Running all tests with race detector..."
+	go test -v -race -count=1 ./...
+
+.PHONY: test-cover
+# run all tests with coverage summary
+test-cover:
+	@echo "🧪 Running all tests with coverage..."
+	go test -v -cover -coverprofile=build/coverage.out -count=1 ./... 2>&1
+	@go tool cover -func=build/coverage.out | sort -k3 -r | head -30
+	@echo ""
+	@echo "📊 Total coverage: $$(go tool cover -func=build/coverage.out | tail -1 | awk '{print $$NF}')"
+
+.PHONY: test-cover-html
+# run all tests with HTML coverage report
+test-cover-html:
+	@echo "🧪 Running all tests with HTML coverage..."
+	mkdir -p build
+	go test -v -cover -coverprofile=build/coverage.out -count=1 ./...
+	go tool cover -html=build/coverage.out -o build/coverage.html
+	@echo "📄 Coverage report: build/coverage.html"
+	@go tool cover -func=build/coverage.out | sort -k3 -r | head -30
+	@echo ""
+	@echo "📊 Total coverage: $$(go tool cover -func=build/coverage.out | tail -1 | awk '{print $$NF}')"
+
+.PHONY: test-cover-clean
+# clean coverage output
+test-cover-clean:
+	@echo "🧹 Cleaning coverage output..."
+	rm -f build/coverage.out build/coverage.html
+
+.PHONY: test-verbose
+# run all tests with extra detail (full verbose per-package)
+test-verbose:
+	@echo "🧪 Running all tests (full verbose)..."
+	@for pkg in $$(go list ./...); do \
+		echo "--- $$pkg ---"; \
+		go test -v -count=1 $$pkg || true; \
+	done
 
 .PHONY: test-%
 # run tests for specific service (e.g., make test-auth-service)
 test-%:
 	@echo "🧪 Running tests for $*..."
-	go test -v ./$*/...
+	go test -v -count=1 ./$*/...
+
+.PHONY: test-cover-%
+# run tests with coverage for specific service (e.g., make test-cover-auth-service)
+test-cover-%:
+	@echo "🧪 Running tests with coverage for $*..."
+	mkdir -p build
+	go test -v -cover -coverprofile=build/coverage-$*.out -count=1 ./$*/...
+	@go tool cover -func=build/coverage-$*.out
+	@echo ""
+	@echo "📊 $* total: $$(go tool cover -func=build/coverage-$*.out | tail -1 | awk '{print $$NF}')"
+
+.PHONY: test-all
+# run all test variants (verbose, race, cover)
+test-all: test test-race test-cover
+	@echo "🎉 All test variants completed!"
 
 .PHONY: clean
 # clean build artifacts
@@ -122,7 +169,6 @@ clean:
 		find $$service -name "*.pb.go" -delete 2>/dev/null || true; \
 		find $$service -name "*_grpc.pb.go" -delete 2>/dev/null || true; \
 		find $$service -name "*.pb.gw.go" -delete 2>/dev/null || true; \
-		find $$service -name "wire_gen.go" -delete 2>/dev/null || true; \
 	done
 	@echo "✅ Cleaned successfully!"
 
@@ -194,10 +240,9 @@ help:
 	@echo '  make dev-logs          Show development logs'
 	@echo ''
 	@echo 'Code Generation:'
-	@echo '  make generate          Generate all proto files and wire code'
+	@echo '  make generate          Generate all proto files'
 	@echo '  make generate-shared-proto    Generate shared proto files'
 	@echo '  make generate-service-protos  Generate service proto files'
-	@echo '  make wire              Generate wire dependency injection'
 	@echo ''
 	@echo 'Building:'
 	@echo '  make build             Build all services'
@@ -208,8 +253,15 @@ help:
 	@echo '  make run-<service>     Run specific service'
 	@echo ''
 	@echo 'Testing:'
-	@echo '  make test              Run all tests'
+	@echo '  make test              Run all tests (verbose)'
+	@echo '  make test-short        Run all tests in short mode'
+	@echo '  make test-race         Run all tests with race detector'
+	@echo '  make test-cover        Run all tests with coverage summary'
+	@echo '  make test-cover-html   Run tests and open HTML coverage report'
+	@echo '  make test-cover-clean  Remove coverage output files'
 	@echo '  make test-<service>    Run tests for specific service'
+	@echo '  make test-cover-<svc>  Run service-specific tests with coverage'
+	@echo '  make test-all          Run test + test-race + test-cover'
 	@echo ''
 	@echo 'Code Quality:'
 	@echo '  make fmt               Format code'

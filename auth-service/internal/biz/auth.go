@@ -17,10 +17,12 @@ import (
 )
 
 var (
-	ErrUserNotFound    = errors.New("user not found")
-	ErrInvalidPassword = errors.New("invalid password")
-	ErrUserExists      = errors.New("user already exists")
-	ErrInvalidToken    = errors.New("invalid token")
+	ErrUserNotFound            = errors.New("user not found")
+	ErrInvalidPassword         = errors.New("invalid password")
+	ErrUserExists              = errors.New("user already exists")
+	ErrInvalidToken            = errors.New("invalid token")
+	ErrInsufficientPermissions = errors.New("insufficient permissions")
+	ErrCannotDeleteSelf        = errors.New("cannot delete yourself")
 )
 
 type UserRole string
@@ -224,7 +226,7 @@ func (uc *AuthUsecase) Login(ctx context.Context, req *LoginRequest, orgID uuid.
 	}
 
 	if err != nil {
-		return nil, "", ErrUserNotFound
+		return nil, "", err
 	}
 
 	// Verify password
@@ -450,7 +452,7 @@ func (uc *AuthUsecase) UpdateUser(ctx context.Context, requesterID, targetUserID
 
 	// Only admins can update other users, users can update themselves (limited fields)
 	if requesterID != targetUserID && requester.Role != UserRoleAdmin {
-		return errors.New("insufficient permissions")
+		return ErrInsufficientPermissions
 	}
 
 	// If not admin, restrict what can be updated
@@ -477,12 +479,12 @@ func (uc *AuthUsecase) DeleteUser(ctx context.Context, requesterID, targetUserID
 
 	// Only admins can delete users
 	if requester.Role != UserRoleAdmin {
-		return errors.New("insufficient permissions")
+		return ErrInsufficientPermissions
 	}
 
 	// Cannot delete yourself
 	if requesterID == targetUserID {
-		return errors.New("cannot delete yourself")
+		return ErrCannotDeleteSelf
 	}
 
 	return uc.repo.DeleteUser(ctx, targetUserID)

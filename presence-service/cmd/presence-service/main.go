@@ -14,13 +14,15 @@ import (
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/biz"
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/data"
 	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/presence-service/internal/server"
+	"github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/config"
+	sharedserver "github.com/thisisjayakumar/Orbit-Messenger-chat-app/shared/server"
 )
 
 func main() {
 	// Redis connection
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:         getEnv("REDIS_ADDR", "localhost:6379"),
-		Password:     getEnv("REDIS_PASSWORD", ""),
+		Addr:         config.GetEnv("REDIS_ADDR", "localhost:6379"),
+		Password:     config.GetEnv("REDIS_PASSWORD", ""),
 		DB:           0,
 		ReadTimeout:  2 * time.Second,
 		WriteTimeout: 2 * time.Second,
@@ -35,9 +37,9 @@ func main() {
 
 	// MQTT server
 	mqttConfig := server.MQTTConfig{
-		BrokerURL: getEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),
-		Username:  getEnv("MQTT_USERNAME", "presence_service"),
-		Password:  getEnv("MQTT_PASSWORD", "presence_service_password"),
+		BrokerURL: config.GetEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),
+		Username:  config.GetEnv("MQTT_USERNAME", "presence_service"),
+		Password:  config.GetEnv("MQTT_PASSWORD", "presence_service_password"),
 		Topics:    []string{"presence/+/status", "$SYS/brokers/+/clients/+/connected", "$SYS/brokers/+/clients/+/disconnected"},
 	}
 	mqttServer := server.NewMQTTServer(mqttConfig, presenceUc)
@@ -53,12 +55,12 @@ func main() {
 
 	// Start server
 	srv := &http.Server{
-		Addr:    ":" + getEnv("PORT", "8002"),
-		Handler: httpServer,
+		Addr:    ":" + config.GetEnv("PORT", "8002"),
+		Handler: sharedserver.CORSMiddleware(httpServer),
 	}
 
 	go func() {
-		log.Printf("Presence service starting on port %s", getEnv("PORT", "8002"))
+		log.Printf("Presence service starting on port %s", config.GetEnv("PORT", "8002"))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("Failed to start server:", err)
 		}
@@ -84,11 +86,4 @@ func main() {
 	}
 
 	log.Println("Server exited")
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
